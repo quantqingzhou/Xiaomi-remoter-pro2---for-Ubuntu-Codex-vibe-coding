@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
-"""持续运行的 uinput 键盘：SayAll 通过 start/stop 控制 F5，通过 send 发送 Enter。"""
+"""持续运行的 uinput 键盘：Codex 使用 F5，可选微信扩展使用右 Alt。"""
 from __future__ import annotations
 import fcntl
 import json
@@ -24,17 +24,28 @@ RUNTIME = Path(os.environ.get('XDG_RUNTIME_DIR', f'/run/user/{os.getuid()}')) / 
 SOCKET = RUNTIME / 'keys.sock'
 
 
-def focused_window_is_codex():
+def focused_window_context():
+    """精确匹配已配置的窗口类名；微信扩展默认关闭。"""
     try:
         active = subprocess.check_output(['xprop', '-root', '_NET_ACTIVE_WINDOW'], text=True, timeout=1)
         match = re.search(r'# (0x[0-9a-fA-F]+)', active)
         if not match:
-            return False
+            return None
         wm_class = subprocess.check_output(['xprop', '-id', match.group(1), 'WM_CLASS'], text=True, timeout=1)
         classes = [value.lower() for value in re.findall(r'"([^"\n]*)"', wm_class)]
-        return any(value in load_config().codex_wm_classes for value in classes)
+        config = load_config()
+        if any(value in config.codex_wm_classes for value in classes):
+            return 'codex'
+        if any(value in config.wechat_wm_classes for value in classes):
+            return 'wechat'
+        return None
     except (OSError, ValueError, subprocess.SubprocessError):
-        return False
+        return None
+
+
+def focused_window_is_codex():
+    # 返回键仍只在 Codex 中转为退格，微信继续保留原始 KEY_BACK。
+    return focused_window_context() == 'codex'
 
 
 class RemoteState:
@@ -96,6 +107,8 @@ class KeyRelay:
         # 未明确确认保护有效时，不触发可能压低其他软件声音的客户端听写。
         self.playback_safe = playback_safe if playback_safe is not None else lambda: False
         self.held = False
+        self.held_code = None
+        self.held_context = None
         self.deadline = 0.0
         self.release_pending_since = None
 
@@ -103,13 +116,26 @@ class KeyRelay:
         self.keyboard.write(evdev.ecodes.EV_KEY, code, int(down))
         self.keyboard.syn()
 
+    def _focus_context(self):
+        value = self.focus()
+        # 保持与原先提供布尔值的 Codex 焦点回调兼容。
+        if value is True:
+            return 'codex'
+        return value if isinstance(value, str) and value in {'codex', 'wechat'} else None
+
+    def _held_key_name(self):
+        return 'F5' if self.held_code == evdev.ecodes.KEY_F5 else '右 Alt'
+
     def release(self):
         self.release_pending_since = None
         if self.held:
-            self.key(evdev.ecodes.KEY_F5, False)
+            name = self._held_key_name()
+            self.key(self.held_code, False)
             self.held = False
-            return 'F5 已松开'
-        return 'F5 已处于松开状态'
+            self.held_code = None
+            self.held_context = None
+            return f'{name} 已松开'
+        return '听写键已处于松开状态'
 
     def apply(self, action, stamp):
         # 客户端时间戳反映子进程调度时间，不能代表 HID 事件的先后顺序。
@@ -120,23 +146,26 @@ class KeyRelay:
             return self.release()
         if action == 'start':
             if self.held:
-                return 'F5 已处于按住状态'
-            if not self.focus():
-                return '跳过 F5：Codex 未获得焦点'
+                return f'{self._held_key_name()} 已处于按住状态'
+            context = self._focus_context()
+            if context is None:
+                return '跳过听写键：当前窗口未启用遥控器听写'
             # 快速点按可能在开始命令对应的子进程运行前就已结束。
             if self.remote_pressed() is not True:
-                return '跳过 F5：遥控器按键已松开或暂时无法读取'
-            if not self.playback_safe():
+                return '跳过听写键：遥控器按键已松开或暂时无法读取'
+            if context == 'codex' and not self.playback_safe():
                 return '跳过 F5：客户端播放保护未生效或已被更新覆盖，请先运行诊断并恢复保护'
-            self.key(evdev.ecodes.KEY_F5, True)
+            code = evdev.ecodes.KEY_F5 if context == 'codex' else evdev.ecodes.KEY_RIGHTALT
+            self.key(code, True)
+            self.held_code, self.held_context = code, context
             self.held, self.deadline = True, self.clock() + MAX_HOLD_SECONDS
             self.release_pending_since = None
-            return 'F5 已按下'
+            return f'{self._held_key_name()} 已按下'
         if action == 'send':
             if self.held:
                 return '跳过 Enter：听写键仍按住'
-            if not self.focus():
-                return '跳过 Enter：Codex 未获得焦点'
+            if self._focus_context() is None:
+                return '跳过 Enter：当前窗口未启用遥控器发送'
             self.key(evdev.ecodes.KEY_ENTER, True)
             self.key(evdev.ecodes.KEY_ENTER, False)
             return 'Enter 已发送'
@@ -146,7 +175,7 @@ class KeyRelay:
         if not self.held:
             self.release_pending_since = None
             return None
-        if not self.playback_safe():
+        if self.held_context == 'codex' and not self.playback_safe():
             return self.release() + '（客户端播放保护失效，已停止触发听写）'
         now = self.clock()
         if now >= self.deadline:
@@ -166,11 +195,12 @@ def serve():
     with (RUNTIME / 'keys.lock').open('w') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         # SayAll 会排除此设备名称；不要将虚拟键盘标识伪装成小米设备。
-        with evdev.UInput({evdev.ecodes.EV_KEY: [evdev.ecodes.KEY_F5, evdev.ecodes.KEY_ENTER]},
+        with evdev.UInput({evdev.ecodes.EV_KEY: [evdev.ecodes.KEY_F5, evdev.ecodes.KEY_ENTER,
+                                               evdev.ecodes.KEY_RIGHTALT]},
                           name='SayAll Codex Keys', vendor=1, product=1, version=1) as keyboard:
             remote = RemoteState(address=config.remote_address, vendor=config.vendor_id,
                                  product=config.product_id)
-            relay = KeyRelay(keyboard, focused_window_is_codex, remote.pressed,
+            relay = KeyRelay(keyboard, focused_window_context, remote.pressed,
                              playback_safe=lambda: is_protected(Path(config.dictation_helper)))
             running = True
 
@@ -186,7 +216,7 @@ def serve():
                 os.chmod(SOCKET, 0o600)
                 server.listen(8)
                 server.settimeout(0.2)
-                print('已就绪：持续运行的 uinput 键盘（F5 和 Enter）', flush=True)
+                print('已就绪：持续运行的 uinput 键盘（F5、右 Alt 和 Enter）', flush=True)
                 try:
                     while running:
                         watchdog = relay.watchdog()
@@ -202,7 +232,10 @@ def serve():
                                 request = json.loads(connection.recv(2048))
                                 action = request['action']
                                 if action == 'status':
-                                    result = {'ready': True, 'f5_held': relay.held,
+                                    result = {'ready': True, 'voice_key_held': relay.held,
+                                              'f5_held': relay.held_code == evdev.ecodes.KEY_F5,
+                                              'held_context': relay.held_context,
+                                              'wechat_enabled': bool(config.wechat_wm_classes),
                                               'playback_protected': relay.playback_safe()}
                                 else:
                                     result = relay.apply(action, int(request['stamp']))

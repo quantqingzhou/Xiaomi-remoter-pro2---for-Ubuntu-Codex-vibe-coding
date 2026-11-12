@@ -50,6 +50,21 @@ class ManagementTests(unittest.TestCase):
         self.assertIn(app / 'no_duck_helper.py', files)
         settings = json.loads(files[self.layout.config / manage.NAME / 'config.json'])
         self.assertEqual(settings['dictation_helper'], self.settings.dictation_helper)
+        self.assertEqual(settings['wechat_wm_classes'], [])
+
+    def test_optional_wechat_cli_is_explicit_and_preview_does_not_write(self):
+        args = ['manage.py', 'install', '--address', 'AA:BB:CC:DD:EE:FF',
+                '--wechat-window-class', 'WeChat', '--wechat-window-class', 'weixin']
+        with patch.object(sys, 'argv', args), patch.object(manage.Layout, 'for_user', return_value=self.layout), \
+                patch.object(manage, 'build_plan', wraps=manage.build_plan) as build, \
+                patch.object(manage, 'is_protected', return_value=True), redirect_stdout(io.StringIO()):
+            self.assertEqual(manage.main(), 0)
+        selected = build.call_args.args[1]
+        self.assertEqual(selected.wechat_wm_classes, ('wechat', 'weixin'))
+        files, _ = manage.build_plan(self.layout, selected)
+        cfg = json.loads(files[self.layout.config / manage.NAME / 'config.json'])
+        self.assertEqual(cfg['wechat_wm_classes'], ['wechat', 'weixin'])
+        self.assertFalse(self.layout.config.exists())
 
     def test_cli_install_without_protection_never_writes_or_stops_services(self):
         fake_sayall = Path(self.temp.name) / 'sayall-bridge'
@@ -217,6 +232,18 @@ class ConfigurationTests(unittest.TestCase):
     def test_valid_settings_roundtrip(self):
         cfg=Settings.from_dict({'remote_address':'AA:BB:CC:DD:EE:FF'})
         self.assertEqual(Settings.from_dict(cfg.to_dict()),cfg)
+
+    def test_wechat_is_opt_in_and_configuration_roundtrips(self):
+        data = {'remote_address':'AA:BB:CC:DD:EE:FF'}
+        self.assertEqual(Settings.from_dict(data).wechat_wm_classes, ())
+        cfg=Settings.from_dict({**data, 'wechat_wm_classes':[' WeChat ', 'weixin']})
+        self.assertEqual(cfg.wechat_wm_classes, ('wechat', 'weixin'))
+        self.assertEqual(Settings.from_dict(cfg.to_dict()), cfg)
+
+    def test_wechat_rejects_invalid_or_overlapping_window_classes(self):
+        for value in ['wechat', None, [True], [''], ['chatgpt'], [' ChatGPT ']]:
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                Settings.from_dict({'remote_address':'AA:BB:CC:DD:EE:FF', 'wechat_wm_classes':value})
 
     def test_invalid_addresses_and_ids_rejected(self):
         for value in ['', 'not a MAC', 'AA:BB:CC:DD:EE:FF\n', 'AA:BB:CC:DD:EE:*']:

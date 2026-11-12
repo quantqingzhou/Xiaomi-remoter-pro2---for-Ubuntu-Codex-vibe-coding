@@ -32,6 +32,10 @@ def main():
     try:
         config = load_config()
         check('配置文件', True)
+        if config.wechat_wm_classes:
+            check('微信扩展：Fcitx5', shutil.which('fcitx5') is not None)
+            check('微信扩展：Vinput 工具', any(shutil.which(name) for name in ['vinput', 'vinput-gui']))
+            print('微信扩展已选择：请另外确认微信使用 Fcitx5、Alt_R 为按住说话，且识别服务与 SayAll Mic 已配置；程序存在不代表实际转写通过。')
         check('SayAll 桥接脚本', Path(config.sayall_bridge).is_file(), config.sayall_bridge)
         check('客户端播放保护', is_protected(Path(config.dictation_helper)),
               '保护失效时遥控器不会触发 F5；客户端更新后需要重新检查')

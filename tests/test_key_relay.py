@@ -18,6 +18,7 @@ m = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(m)
 REMOTE_ADDRESS = 'aa:bb:cc:dd:ee:ff'
 F5, ENTER = m.evdev.ecodes.KEY_F5, m.evdev.ecodes.KEY_ENTER
+RIGHT_ALT = m.evdev.ecodes.KEY_RIGHTALT
 
 
 def remote_state(*args, **kwargs):
@@ -246,10 +247,72 @@ class RelayTests(unittest.TestCase):
         self.assertFalse(self.relay.held)
         self.assertEqual(self.keyboard.events, [(F5, 1), (F5, 0)])
 
+    def test_wechat_holds_right_alt_and_confirm_waits_for_release(self):
+        self.focus = 'wechat'
+        self.audio_safe = False
+        self.start()
+        self.assertEqual(self.relay.held_context, 'wechat')
+        self.relay.apply('send', 101)
+        self.relay.apply('start', 102)
+        self.assertEqual(self.keyboard.events, [(RIGHT_ALT, 1)])
+        self.remote = False
+        self.relay.apply('stop', 200)
+        self.relay.apply('send', 300)
+        self.assertEqual(self.keyboard.events, [(RIGHT_ALT, 1), (RIGHT_ALT, 0), (ENTER, 1), (ENTER, 0)])
+
+    def test_wechat_release_uses_original_key_after_focus_changes(self):
+        self.focus = 'wechat'
+        self.start()
+        self.focus = 'codex'
+        self.remote = False
+        self.relay.apply('stop', 200)
+        self.assertEqual(self.keyboard.events, [(RIGHT_ALT, 1), (RIGHT_ALT, 0)])
+        self.remote = True
+        self.start(300)
+        self.assertEqual(self.keyboard.events[-1], (F5, 1))
+
+    def test_codex_release_uses_original_key_after_focus_changes(self):
+        self.start()
+        self.focus = 'wechat'
+        self.remote = False
+        self.relay.apply('stop', 200)
+        self.assertEqual(self.keyboard.events, [(F5, 1), (F5, 0)])
+
+    def test_wechat_watchdog_releases_right_alt_when_device_disappears(self):
+        self.focus = 'wechat'
+        self.audio_safe = False
+        self.start()
+        self.assertIsNone(self.relay.watchdog())
+        self.remote = None
+        self.relay.watchdog()
+        self.now = 1.6
+        self.relay.watchdog()
+        self.assertEqual(self.keyboard.events, [(RIGHT_ALT, 1), (RIGHT_ALT, 0)])
+        self.assertFalse(self.relay.held)
+
+    def test_wechat_timeout_and_shutdown_release_the_modifier(self):
+        for timeout in [True, False]:
+            with self.subTest(timeout=timeout):
+                self.keyboard.events.clear()
+                self.focus = 'wechat'
+                self.start()
+                if timeout:
+                    self.now += 90
+                    self.relay.watchdog()
+                else:
+                    self.relay.release()
+                self.assertEqual(self.keyboard.events, [(RIGHT_ALT, 1), (RIGHT_ALT, 0)])
+
+    def test_unknown_context_never_sends_keys(self):
+        self.focus = 'browser'
+        self.relay.apply('start', 100)
+        self.relay.apply('send', 200)
+        self.assertEqual(self.keyboard.events, [])
+
 
 class FocusTests(unittest.TestCase):
     def test_window_class_match_is_exact_and_case_insensitive(self):
-        settings=SimpleNamespace(codex_wm_classes=('chatgpt',))
+        settings=SimpleNamespace(codex_wm_classes=('chatgpt',), wechat_wm_classes=())
         for window_class,expected in [('Chatgpt',True),('SomeChatgptBrowser',False),('Firefox',False)]:
             with self.subTest(window_class=window_class),patch.object(m,'load_config',return_value=settings),patch.object(m.subprocess,'check_output',side_effect=[
                 '_NET_ACTIVE_WINDOW(WINDOW): window id # 0x123',f'WM_CLASS(STRING) = "instance", "{window_class}"']):
@@ -257,6 +320,25 @@ class FocusTests(unittest.TestCase):
 
     def test_unavailable_focus_is_not_treated_as_codex(self):
         with patch.object(m.subprocess,'check_output',side_effect=OSError('没有可用显示')):
+            self.assertFalse(m.focused_window_is_codex())
+
+    def test_wechat_requires_explicit_exact_class_configuration(self):
+        for configured, window_class, expected in [
+            ((), 'WeChat', None), (('wechat', 'weixin'), 'WeChat', 'wechat'),
+            (('wechat', 'weixin'), 'weixin', 'wechat'),
+            (('wechat',), 'SomeWeChatBrowser', None),
+            (('wechat',), 'Chatgpt', 'codex'),
+        ]:
+            with self.subTest(configured=configured, window_class=window_class):
+                settings=SimpleNamespace(codex_wm_classes=('chatgpt',), wechat_wm_classes=configured)
+                with patch.object(m,'load_config',return_value=settings),patch.object(m.subprocess,'check_output',side_effect=[
+                    '_NET_ACTIVE_WINDOW(WINDOW): window id # 0x123',f'WM_CLASS(STRING) = "instance", "{window_class}"']):
+                    self.assertEqual(m.focused_window_context(),expected)
+
+    def test_wechat_does_not_enable_codex_backspace_mapping(self):
+        settings=SimpleNamespace(codex_wm_classes=('chatgpt',), wechat_wm_classes=('wechat',))
+        with patch.object(m,'load_config',return_value=settings),patch.object(m.subprocess,'check_output',side_effect=[
+            '_NET_ACTIVE_WINDOW(WINDOW): window id # 0x123','WM_CLASS(STRING) = "wechat", "WeChat"']):
             self.assertFalse(m.focused_window_is_codex())
 
 
