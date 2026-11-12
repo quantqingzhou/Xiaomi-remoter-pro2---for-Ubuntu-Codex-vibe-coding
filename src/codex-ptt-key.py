@@ -44,7 +44,7 @@ def focused_window_context():
 
 
 def focused_window_is_codex():
-    # 返回键仍只在 Codex 中转为退格，微信继续保留原始 KEY_BACK。
+    # 保留单独判断 Codex 的接口；应用专用按键映射使用完整上下文。
     return focused_window_context() == 'codex'
 
 

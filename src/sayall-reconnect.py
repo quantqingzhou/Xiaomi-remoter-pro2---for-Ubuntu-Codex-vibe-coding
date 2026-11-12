@@ -78,7 +78,7 @@ def contextual_remote_hid(base_hid, focus, config=None):
 def main():
     from remote_config import load_config
     config = load_config()
-    # 复用 F5 / Enter 桥接所用的窗口焦点判断。
+    # 返回键复用听写／发送桥接的应用上下文，微信扩展仍须显式启用。
     keys_path = Path(__file__).with_name('codex-ptt-key.py')
     keys_spec = importlib.util.spec_from_file_location('codex_keys', keys_path)
     keys = importlib.util.module_from_spec(keys_spec)
@@ -97,7 +97,7 @@ def main():
             return await run_with_disconnect_guard(self, super().run(*args, **kwargs))
 
     upstream.Bridge = ReconnectingBridge
-    upstream.RemoteHid = contextual_remote_hid(upstream.RemoteHid, keys.focused_window_is_codex, config)
+    upstream.RemoteHid = contextual_remote_hid(upstream.RemoteHid, keys.focused_window_context, config)
     return upstream.main()
 
 

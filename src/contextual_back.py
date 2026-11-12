@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-only
-"""在 Codex 中将遥控器返回键映射为退格键，保留物理按键的按下、重复与松开事件。"""
+"""在 Codex 和已启用的微信窗口中映射退格，保留按下、重复与松开事件。"""
 import threading
 
 from evdev import ecodes
@@ -32,7 +32,7 @@ class ContextualBackKeyboard:
         self.lock = threading.RLock()
         self.physical_down = False
         self.output_code = None
-        self.codex_at_press = None
+        self.context_at_press = None
         self.stopped = threading.Event()
         self.thread = None
         if monitor:
@@ -42,6 +42,13 @@ class ContextualBackKeyboard:
     def __getattr__(self, name):
         return getattr(self.keyboard, name)
 
+    def _focus_context(self):
+        value = self.focus()
+        # 兼容旧版只返回 Codex 焦点布尔值的调用方。
+        if value is True:
+            return 'codex'
+        return value if isinstance(value, str) and value in {'codex', 'wechat'} else None
+
     def _release_output(self):
         if self.output_code is not None:
             self.keyboard.write(ecodes.EV_KEY, self.output_code, 0)
@@ -50,7 +57,7 @@ class ContextualBackKeyboard:
 
     def check_focus(self):
         with self.lock:
-            if self.output_code is not None and bool(self.focus()) != self.codex_at_press:
+            if self.output_code is not None and self._focus_context() != self.context_at_press:
                 self._release_output()
                 self.log('焦点已改变，已释放返回键输出；等待物理按键松开')
 
@@ -62,11 +69,11 @@ class ContextualBackKeyboard:
                 if self.physical_down:
                     return
                 self.physical_down = True
-                self.codex_at_press = bool(self.focus())
-                self.output_code = ecodes.KEY_BACKSPACE if self.codex_at_press else ecodes.KEY_BACK
+                self.context_at_press = self._focus_context()
+                self.output_code = ecodes.KEY_BACKSPACE if self.context_at_press else ecodes.KEY_BACK
                 self.keyboard.write(ecodes.EV_KEY, self.output_code, 1)
                 self.keyboard.syn()
-                self.log('返回键 → Backspace（Codex）' if self.codex_at_press
+                self.log('返回键 → Backspace（Codex／微信）' if self.context_at_press
                          else '返回键 → KEY_BACK（其他应用）')
             elif event.value == 2:
                 self.check_focus()
@@ -76,14 +83,14 @@ class ContextualBackKeyboard:
             elif event.value == 0:
                 self._release_output()
                 self.physical_down = False
-                self.codex_at_press = None
+                self.context_at_press = None
 
     def release(self):
         """设备断开或程序退出时释放按键，即使没有收到物理松开事件。"""
         with self.lock:
             self._release_output()
             self.physical_down = False
-            self.codex_at_press = None
+            self.context_at_press = None
 
     def _monitor(self):
         while not self.stopped.wait(0.1):

@@ -52,7 +52,8 @@ journalctl --user -u sayall-bridge -u xiaomi-codex-keys -n 80
 - 运行 `xprop -root _NET_ACTIVE_WINDOW`，用返回的窗口 ID 执行 `xprop -id <窗口ID> WM_CLASS`。应与配置的 `codex_wm_classes` 中某一项准确匹配（不区分大小写）。
 - 这种检测只适用于 X11/XWayland 可见的窗口。换到原生 Wayland 窗口时可能不可用；不要用关闭所有焦点检查的方式掩盖问题。
 - F5 快捷键必须已经在 Codex 中设置。点一下输入框，长按语音键测试；非常短的点按可能被有意忽略，防止迟到的启动命令留下录音状态。
-- 确认键在 Codex 外或 F5 仍按住时不会发送。返回键在 Codex 外保留 KEY_BACK，当前软件未处理它时可以没有明显动作。
+- 确认键只在 Codex 或已启用的微信窗口中发送 Enter，听写键仍按住时不会发送。返回键在这两类窗口中作为 Backspace，其他软件保留 KEY_BACK；当前软件未处理原始返回键时可以没有明显动作。
+- 微信的退格映射需要 `alpha.4` 或更新版本，且微信窗口类名已在 `wechat_wm_classes` 中启用；只更新下载目录不会替换已经安装的运行文件，升级步骤见[微信说明](WECHAT.md#启用微信窗口映射)。
 
 ## 蓝牙重连后只有按键，没有麦克风
 

@@ -335,11 +335,29 @@ class FocusTests(unittest.TestCase):
                     '_NET_ACTIVE_WINDOW(WINDOW): window id # 0x123',f'WM_CLASS(STRING) = "instance", "{window_class}"']):
                     self.assertEqual(m.focused_window_context(),expected)
 
-    def test_wechat_does_not_enable_codex_backspace_mapping(self):
+    def test_wechat_is_not_misidentified_as_codex(self):
         settings=SimpleNamespace(codex_wm_classes=('chatgpt',), wechat_wm_classes=('wechat',))
         with patch.object(m,'load_config',return_value=settings),patch.object(m.subprocess,'check_output',side_effect=[
             '_NET_ACTIVE_WINDOW(WINDOW): window id # 0x123','WM_CLASS(STRING) = "wechat", "WeChat"']):
             self.assertFalse(m.focused_window_is_codex())
+
+    def test_backspace_follows_explicit_wechat_window_configuration(self):
+        from contextual_back import ContextualBackKeyboard
+        from evdev import ecodes as E
+        for configured, window_class, output in [
+            ((), 'WeChat', E.KEY_BACK), (('wechat',), 'WeChat', E.KEY_BACKSPACE),
+            (('wechat',), 'SomeWeChatBrowser', E.KEY_BACK),
+            (('wechat',), 'Chatgpt', E.KEY_BACKSPACE),
+        ]:
+            with self.subTest(configured=configured, window_class=window_class):
+                settings=SimpleNamespace(codex_wm_classes=('chatgpt',), wechat_wm_classes=configured)
+                keyboard=Keyboard()
+                router=ContextualBackKeyboard(keyboard,m.focused_window_context,lambda _:None,monitor=False)
+                with patch.object(m,'load_config',return_value=settings),patch.object(m.subprocess,'check_output',side_effect=[
+                    '_NET_ACTIVE_WINDOW(WINDOW): window id # 0x123',f'WM_CLASS(STRING) = "instance", "{window_class}"']):
+                    for value in [1,0]:
+                        router.write_event(SimpleNamespace(type=E.EV_KEY,code=E.KEY_BACK,value=value))
+                self.assertEqual(keyboard.events,[(output,1),(output,0)])
 
 
 if __name__ == '__main__':

@@ -51,6 +51,49 @@ class BackTests(unittest.TestCase):
         for value in [1, 2, 2, 0]: self.back(value)
         self.assertEqual(self.keyboard.events, [(E.EV_KEY, E.KEY_BACKSPACE, v) for v in [1, 2, 2, 0]])
 
+    def test_wechat_hold_preserves_repeats_and_release(self):
+        self.focus = 'wechat'
+        for value in [1, 2, 2, 0]: self.back(value)
+        self.assertEqual(self.keyboard.events, [(E.EV_KEY, E.KEY_BACKSPACE, v) for v in [1, 2, 2, 0]])
+
+    def test_switching_between_codex_and_wechat_stops_deletion_until_keyup(self):
+        for first, second in [('codex', 'wechat'), ('wechat', 'codex')]:
+            with self.subTest(first=first):
+                self.keyboard.events.clear()
+                self.focus = first
+                self.back(1)
+                self.focus = second
+                self.router.check_focus()
+                self.back(2); self.back(1)
+                self.assertEqual(self.keyboard.events, [(E.EV_KEY, E.KEY_BACKSPACE, 1),
+                                                       (E.EV_KEY, E.KEY_BACKSPACE, 0)])
+                self.back(0); self.back(1); self.back(0)
+                self.assertEqual(len(self.keyboard.events), 4)
+
+    def test_leaving_wechat_does_not_forward_repeats_to_browser(self):
+        self.focus = 'wechat'
+        self.back(1)
+        self.focus = None
+        self.back(2); self.back(0)
+        self.assertEqual(self.keyboard.events, [(E.EV_KEY, E.KEY_BACKSPACE, 1),
+                                               (E.EV_KEY, E.KEY_BACKSPACE, 0)])
+        self.back(1); self.back(0)
+        self.assertEqual(self.keyboard.events[-2:], [(E.EV_KEY, E.KEY_BACK, 1),
+                                                   (E.EV_KEY, E.KEY_BACK, 0)])
+
+    def test_wechat_disconnect_and_close_release_backspace(self):
+        self.focus = 'wechat'
+        self.back(1)
+        self.router.release()
+        self.back(1)
+        self.router.close()
+        self.assertEqual(self.keyboard.events, [(E.EV_KEY, E.KEY_BACKSPACE, v) for v in [1, 0, 1, 0]])
+
+    def test_unknown_context_preserves_original_back(self):
+        self.focus = 'browser'
+        for value in [1, 2, 0]: self.back(value)
+        self.assertEqual(self.keyboard.events, [(E.EV_KEY, E.KEY_BACK, v) for v in [1, 2, 0]])
+
     def test_focus_change_releases_and_suppresses_until_keyup(self):
         self.back(1)
         self.focus = False

@@ -89,6 +89,16 @@ class IntegrationTests(unittest.TestCase):
         keyboard, _, _ = self.run_events(False, [(E.KEY_BACK, v) for v in [1, 2, 0]])
         self.assertEqual(keyboard.events, [(E.EV_KEY, E.KEY_BACK, v) for v in [1, 2, 0]])
 
+    def test_wechat_back_mapping_preserves_voice_confirm_and_repeat(self):
+        keyboard, voices, actions = self.run_events('wechat', [
+            (E.KEY_BACK, 1), (E.KEY_BACK, 2), (E.KEY_BACK, 0),
+            (E.KEY_F5, 1), (E.KEY_F5, 0),
+            (E.KEY_ENTER, 1), (E.KEY_ENTER, 0), (E.KEY_UP, 1), (E.KEY_UP, 0)])
+        self.assertEqual(keyboard.events, [(E.EV_KEY, E.KEY_BACKSPACE, v) for v in [1, 2, 0]]
+                         + [(E.EV_KEY, E.KEY_UP, v) for v in [1, 0]])
+        self.assertEqual(voices, ['down', 'up'])
+        self.assertEqual(actions, [('command:send', E.KEY_ENTER)])
+
     def test_hid_detach_releases_backspace_without_a_physical_keyup(self):
         keyboard, _, _ = self.run_events(True, [(E.KEY_BACK, 1)])
         self.assertEqual(keyboard.events, [(E.EV_KEY, E.KEY_BACKSPACE, v) for v in [1, 0]])
