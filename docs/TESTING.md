@@ -30,7 +30,7 @@
 
 Ubuntu / Debian 通过 apt 安装依赖时，使用 `/usr/bin/python3`。Conda 或虚拟环境中的 Python 不一定能找到系统安装的 evdev / bleak；使用其他解释器时需要在对应环境安装依赖。
 
-没有 `/usr/bin/sayall-bridge` 时，其事件循环集成测试会跳过。CI 没有遥控器，不能代替真实硬件测试。GitHub Actions 工作流已提供，但在首次推送前不声称已在 GitHub 上运行成功。
+没有 `/usr/bin/sayall-bridge` 时，其事件循环集成测试会跳过。2026-11-12，[GitHub Actions 首次运行](https://github.com/quantqingzhou/Xiaomi-remoter-pro2---for-Ubuntu-Codex-vibe-coding/actions/runs/43168258713)在 Ubuntu 24.04 运行器上成功：共发现 82 项测试，79 项通过，3 项因未安装 SayAll 而跳过，无失败。CI 没有遥控器，也不执行真实安装，不能代替真实硬件测试或另一台电脑的部署验收。
 
 基础中文化调整文档、注释和显示文本，原有命令、配置键和协议字段保持原有含义。`alpha.2` 另新增必需的保护步骤及相关配置，不能把本次版本整体视为纯文字改动。代码标识和标准许可证文本保留原文。
 
