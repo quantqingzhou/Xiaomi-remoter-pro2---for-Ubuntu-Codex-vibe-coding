@@ -1,0 +1,3 @@
+# Debian / Ubuntu 也可安装 python3-evdev 和 python3-bleak 系统软件包。
+evdev>=1.7,<2
+bleak>=0.22,<3

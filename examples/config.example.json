@@ -1,0 +1,9 @@
+{
+  "remote_address": "AA:BB:CC:DD:EE:FF",
+  "vendor_id": "2717",
+  "product_id": "32b8",
+  "codex_wm_classes": ["chatgpt"],
+  "sayall_bridge": "/usr/bin/sayall-bridge",
+  "sayall_config": null,
+  "dictation_helper": "/usr/lib/chatgpt/resources/native/dictation-ducking"
+}

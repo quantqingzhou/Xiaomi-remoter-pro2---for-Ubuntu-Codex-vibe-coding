@@ -1,0 +1,17 @@
+name: 自动测试
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  unit:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: 安装测试依赖
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-evdev python3-bleak
+      - name: 运行单元测试和隔离安装测试
+        run: /usr/bin/python3 -B -m unittest discover -s tests -v
