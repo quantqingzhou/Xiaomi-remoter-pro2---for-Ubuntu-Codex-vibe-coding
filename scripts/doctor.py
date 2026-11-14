@@ -9,11 +9,20 @@ import subprocess
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
-from remote_config import load_config
-from playback_protection import is_protected
+from remote_config import load_config, DEFAULT_DICTATION_HELPER
+from playback_protection import inspect_protection
+from manage import ChineseArgumentParser
 
 
-def main():
+def main(argv=None):
+    parser = ChineseArgumentParser(description='只读检查遥控器及客户端播放保护；不修改设置。')
+    parser.add_argument('--client-only', action='store_true',
+                        help='只检查客户端播放保护，不要求已安装本项目的桥接配置')
+    parser.add_argument('--helper', type=Path,
+                        help='客户端 native/dictation-ducking 的绝对路径；仅与 --client-only 一起使用')
+    args = parser.parse_args(argv)
+    if args.helper is not None and not args.client_only:
+        parser.error('--helper 必须与 --client-only 一起使用；完整诊断读取已安装配置中的路径')
     failures = []
     def check(label, okay, detail=''):
         print(f'[{"通过" if okay else "待检查"}] {label}' + (': ' + detail if detail else ''))
@@ -21,6 +30,16 @@ def main():
             failures.append(label)
     def run(*args):
         return subprocess.run(args, text=True, capture_output=True, timeout=8)
+    def check_client(helper):
+        result = inspect_protection(helper)
+        check('客户端播放保护', result['status'] == 'protected', result['message'])
+        print('保护状态：' + result['status'])
+        if result['sha256']:
+            print('文件 SHA-256：' + result['sha256'])
+    if args.client_only:
+        check_client(args.helper if args.helper is not None else Path(DEFAULT_DICTATION_HELPER))
+        print('未修改任何设置；未检查蓝牙、桥接服务或实际收音。')
+        return 1 if failures else 0
     check('Python >= 3.10', sys.version_info >= (3, 10))
     for name in ['evdev', 'bleak']:
         check('Python 模块 ' + name, importlib.util.find_spec(name) is not None)
@@ -37,8 +56,7 @@ def main():
             check('微信扩展：Vinput 工具', any(shutil.which(name) for name in ['vinput', 'vinput-gui']))
             print('微信扩展已选择：请另外确认微信使用 Fcitx5、Alt_R 为按住说话，且识别服务与 SayAll Mic 已配置；程序存在不代表实际转写通过。')
         check('SayAll 桥接脚本', Path(config.sayall_bridge).is_file(), config.sayall_bridge)
-        check('客户端播放保护', is_protected(Path(config.dictation_helper)),
-              '保护失效时遥控器不会触发 F5；客户端更新后需要重新检查')
+        check_client(Path(config.dictation_helper))
         if shutil.which('bluetoothctl'):
             info = run('bluetoothctl', 'info', config.remote_address)
             check('蓝牙连接状态', 'Connected: yes' in info.stdout)

@@ -32,11 +32,11 @@ journalctl --user -u sayall-bridge -u xiaomi-codex-keys -n 80
 
 ## 提示客户端播放保护未生效
 
-运行 `/usr/bin/python3 -B scripts/doctor.py` 查看保护检查。安装使用的 `--dictation-helper` 路径必须与 `protect-client --helper` 指向同一个客户端文件。默认路径是 `/usr/lib/chatgpt/resources/native/dictation-ducking`，只接受已核实原程序或本项目替代程序的精确内容。
+先在 `alpha.5` 或更新源码目录运行 `/usr/bin/python3 -B scripts/doctor.py --client-only`，无需桥接配置即可检查保护。默认路径是 `/usr/lib/chatgpt/resources/native/dictation-ducking`；自定义位置用 `--helper` 指定，必须与安装使用的 `--dictation-helper`、保护使用的 `--helper` 指向同一个文件。
 
-系统目录需要管理员权限才能写入，原始备份和元数据也以私有权限保存。先由普通用户执行保护预览；实际写入、读取私有备份或恢复时，按[完整说明](../README.md#2-先启用客户端播放保护)使用所需权限。本程序不会自动提升权限，也不会通过改动整个目录权限来绕过检查。
+诊断会区分 `protected`（有效）、`known_original`（已核实原版）、`unknown`（未知内容）和 `unavailable`（无法检查），并显示原因。系统目录需要管理员权限才能写入，原始备份和元数据也以私有权限保存；更新后的重新应用预览可能需要管理员权限读取这些备份。按[客户端更新指南](CLIENT_UPDATES.md)处理，本程序不会自动提升权限或改动目录权限。
 
-如果客户端更新覆盖了保护，桥接会拒绝继续启动听写；听写中检测到保护失效时会释放 F5。不要绕过此检查或直接恢复旧备份来覆盖新版本，应该先重新核实客户端版本和辅助程序内容，再提供对应适配。
+如果客户端更新覆盖了保护，桥接会拒绝继续启动听写；听写中检测到保护失效时会释放 F5。日志可能出现 `Skipped F5: Codex playback protection is unavailable`。此次 `26.1111.21308` 更新后的文件仍是已核实原版，重新应用原有保护即可恢复；若状态为 `unknown`，则需要重新核实及适配。不要绕过检查或直接恢复旧备份覆盖新版本，也不用仅为此重配蓝牙或重启 PipeWire。
 
 ## 能开始和停止录音，但没有波形
 

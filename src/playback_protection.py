@@ -10,7 +10,8 @@ import stat
 import tempfile
 
 
-# 仅验证过此客户端版本的原始辅助程序；未知内容一律拒绝替换。
+# 两个已实测客户端版本使用相同原始文件；仍按精确内容判断，未知内容一律拒绝替换。
+# 版本号及实测范围见 docs/CLIENT_UPDATES.md，不以版本号代替内容校验。
 KNOWN_ORIGINAL_SHA256 = '6a8517562755ee33554c6d5571ba8febfadd188d87b12047a4c70cf230f86186'
 BACKUP_SUFFIX = '.xiaomi-codex-original'
 METADATA_SUFFIX = '.xiaomi-codex-protection.json'
@@ -166,6 +167,29 @@ def is_protected(helper):
         return current == _replacement()
     except (OSError, ValueError, TypeError):
         return False
+
+
+def inspect_protection(helper):
+    """只读取目标文件，不读取私有备份、不写文件，也不调用外部命令。"""
+    try:
+        current, _ = _read_regular(_target(helper))
+        replacement = _replacement()
+    except (OSError, ValueError, TypeError) as exc:
+        return {'status': 'unavailable', 'sha256': None,
+                'message': f'无法检查客户端辅助程序：{exc}。请核对安装路径和读取权限。'}
+    digest = _digest(current)
+    if current == replacement:
+        status = 'protected'
+        message = '保护已生效；这仅确认文件内容，实际听写和发送仍需测试。'
+    elif digest == KNOWN_ORIGINAL_SHA256:
+        status = 'known_original'
+        message = ('当前为已核实原版，保护未生效；首次安装或客户端更新覆盖后会出现此状态。'
+                   '请按 docs/CLIENT_UPDATES.md 预览并重新应用 protect-client，保留原始备份。')
+    else:
+        status = 'unknown'
+        message = ('当前文件内容未知，不能直接重新应用旧保护。'
+                   '请保留文件及备份并核实新版本，不要绕过校验或覆盖新文件。')
+    return {'status': status, 'sha256': digest, 'message': message}
 
 
 def protect(helper, apply=False):

@@ -124,6 +124,72 @@ class ProtectionTests(unittest.TestCase):
         self.assertEqual((backup_info.st_ino, backup_info.st_mtime_ns),
                          (self.backup.stat().st_ino, self.backup.stat().st_mtime_ns))
 
+    def test_known_update_can_be_reprotected_without_replacing_backups(self):
+        protection.protect(self.helper, apply=True)
+        saved = {p: (p.read_bytes(), p.stat().st_ino, p.stat().st_mtime_ns)
+                 for p in (self.backup, self.metadata)}
+        # 模拟更新器用同内容的已核实原版替换文件，而不是调用本项目 restore。
+        update = self.helper.with_name('update')
+        update.write_bytes(self.original)
+        update.chmod(self.original_mode)
+        update.replace(self.helper)
+        self.assertFalse(protection.is_protected(self.helper))
+        before = self.snapshot()
+        self.assertEqual(protection.protect(self.helper)['status'], 'preview')
+        self.assertEqual(before, self.snapshot())
+        self.assertTrue(protection.protect(self.helper, apply=True)['changed'])
+        self.assertTrue(protection.is_protected(self.helper))
+        for p, expected in saved.items():
+            self.assertEqual((p.read_bytes(), p.stat().st_ino, p.stat().st_mtime_ns), expected)
+        protection.restore(self.helper, apply=True)
+        self.assert_original()
+
+    def test_unknown_update_is_rejected_even_with_valid_old_backups(self):
+        protection.protect(self.helper, apply=True)
+        self.helper.write_bytes(b'new-unknown-client-helper')
+        before = self.snapshot()
+        for apply in (False, True):
+            with self.subTest(apply=apply), self.assertRaisesRegex(protection.ProtectionError, '不是已核实版本'):
+                protection.protect(self.helper, apply=apply)
+        self.assertEqual(before, self.snapshot())
+
+    def test_known_update_with_damaged_backup_is_not_reprotected(self):
+        protection.protect(self.helper, apply=True)
+        self.helper.write_bytes(self.original)
+        self.backup.write_bytes(b'damaged-old-backup')
+        before = self.snapshot()
+        with self.assertRaisesRegex(protection.ProtectionError, '校验失败'):
+            protection.protect(self.helper, apply=True)
+        self.assertEqual(before, self.snapshot())
+
+    def test_inspect_distinguishes_known_protected_and_unknown_without_writes(self):
+        for content, expected in [(self.original, 'known_original'),
+                                  (protection._replacement(), 'protected'),
+                                  (b'unknown-update', 'unknown')]:
+            with self.subTest(expected=expected):
+                self.helper.write_bytes(content)
+                before = self.snapshot()
+                result = protection.inspect_protection(self.helper)
+                self.assertEqual(result['status'], expected)
+                self.assertEqual(result['sha256'], hashlib.sha256(content).hexdigest())
+                self.assertEqual(before, self.snapshot())
+
+    def test_inspect_protected_file_does_not_read_private_backups(self):
+        protection.protect(self.helper, apply=True)
+        with patch.object(protection, '_validate_backup', side_effect=AssertionError('不应读取备份')):
+            self.assertEqual(protection.inspect_protection(self.helper)['status'], 'protected')
+
+    def test_inspect_reports_missing_symlink_and_permission_errors(self):
+        self.helper.unlink()
+        self.assertEqual(protection.inspect_protection(self.helper)['status'], 'unavailable')
+        outside = self.root / 'outside'
+        outside.write_bytes(self.original)
+        self.helper.symlink_to(outside)
+        self.assertEqual(protection.inspect_protection(self.helper)['status'], 'unavailable')
+        self.assertEqual(outside.read_bytes(), self.original)
+        with patch.object(protection, '_read_regular', side_effect=PermissionError('权限不足')):
+            self.assertEqual(protection.inspect_protection(self.helper)['status'], 'unavailable')
+
     def test_restore_preview_has_no_writes(self):
         protection.protect(self.helper, apply=True)
         before = self.snapshot()
