@@ -35,6 +35,11 @@ KEYS.update({c: getattr(E, 'KEY_' + c) for c in 'ABCDEFGHIJKLMNOPQRSTUVWXYZ01234
 # F5 与右 Alt 保留给已有听写流程，普通按键不能绕过播放保护触发它们。
 KEYS.update({f'F{i}': getattr(E, f'KEY_F{i}') for i in range(1, 13) if i != 5})
 OUTPUT_CODES = sorted(set(KEYS.values()) | set(MODIFIERS.values()))
+NAVIGATION_DEFAULTS = {'enabled': False, 'pointer_speed': 3, 'scroll_speed': 3}
+
+
+def navigation_options(data):
+    return {**NAVIGATION_DEFAULTS, **data.get('navigation', {})}
 
 
 def keymap_path():
@@ -62,7 +67,8 @@ def shortcut_codes(text):
 
 
 def validate(data):
-    if not isinstance(data, dict) or set(data) != {'version', 'profiles', 'extra_buttons'}:
+    required = {'version', 'profiles', 'extra_buttons'}
+    if not isinstance(data, dict) or not required <= set(data) or set(data) - required - {'navigation'}:
         raise ValueError('按键配置结构不正确')
     if type(data['version']) is not int or data['version'] != 1:
         raise ValueError('不支持这个按键配置版本')
@@ -82,6 +88,14 @@ def validate(data):
         raise ValueError('检测到的按键码无效，或已属于其他按键')
     if len(set(extra.values())) != len(extra):
         raise ValueError('同一个物理按键不能同时绑定两个名称')
+    nav = data.get('navigation', {})
+    if not isinstance(nav, dict) or set(nav) - set(NAVIGATION_DEFAULTS):
+        raise ValueError('鼠标操作配置不正确')
+    options = navigation_options(data)
+    if type(options['enabled']) is not bool or any(
+            type(options[k]) is not int or not 1 <= options[k] <= 5
+            for k in ('pointer_speed', 'scroll_speed')):
+        raise ValueError('鼠标操作开关须为布尔值，速度须为 1 到 5')
     return copy.deepcopy(data)
 
 
@@ -106,10 +120,13 @@ def decode(raw):
 
 def pending_bindings(data):
     """旧配置可以读取，但未识别实体键的动作不能被当作可用配置保存。"""
-    return sorted({button for entries in data['profiles'].values()
+    pending = {button for entries in data['profiles'].values()
                    for button, action in entries.items()
                    if button in EXTRA_BUTTONS and action != 'default'
-                   and button not in data['extra_buttons']})
+                   and button not in data['extra_buttons']}
+    if navigation_options(data)['enabled'] and 'home' not in data['extra_buttons']:
+        pending.add('home')
+    return sorted(pending)
 
 
 def bind_button(data, button, code):

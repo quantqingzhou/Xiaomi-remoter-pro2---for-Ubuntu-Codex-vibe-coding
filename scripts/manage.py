@@ -25,7 +25,8 @@ DROPIN = '90-xiaomi-codex.conf'
 RUNTIME_FILES = ['codex-ptt-key.py', 'sayall-reconnect.py', 'contextual_back.py', 'remote_config.py',
                  'playback_protection.py', 'no_duck_helper.py', 'status_notifier.py', 'startup_guard.py', 'keymap_config.py',
                  'mapping_keyboard.py', 'key_detection.py', 'key_settings.py', 'product_photo.py', 'settings_status.py',
-                 'service_controls.py']
+                 'service_controls.py', 'mouse_navigation.py', 'mouse_indicator.py', 'mouse_overlay.py',
+                 'key_presentation.py']
 OWNED_FIELDS = ['address', 'voice_engine', 'voice_start_command', 'voice_stop_command', 'trigger_mode']
 
 

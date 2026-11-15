@@ -94,7 +94,9 @@ def contextual_remote_hid(base_hid, focus, config=None, mappings=None):
                            else ContextualBackKeyboard(self.ui, focus, self.log))
 
         def _detach(self):
-            if isinstance(self.ui, (ContextualBackKeyboard, MappingKeyboard)):
+            if isinstance(self.ui, MappingKeyboard):
+                self.ui.detach()
+            elif isinstance(self.ui, ContextualBackKeyboard):
                 self.ui.release()
             super()._detach()
 

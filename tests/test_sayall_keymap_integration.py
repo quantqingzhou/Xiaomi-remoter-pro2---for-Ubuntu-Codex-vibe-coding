@@ -123,3 +123,58 @@ class IntegrationTests(unittest.TestCase):
                 (E.KEY_ESC, 1), (E.KEY_ESC, 0), (E.KEY_BACKSPACE, 1), (E.KEY_BACKSPACE, 0)]])
             self.assertEqual(voices, ['down', 'up'])
             self.assertEqual(actions, [('command:send', E.KEY_ENTER)])
+
+    def test_mouse_mode_intercepts_real_upstream_send_voice_and_preserves_wechat_tv(self):
+        from keymap_config import MappingStore, defaults, save
+        from test_mouse_navigation import Indicator
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / 'keys.json'
+            data = defaults()
+            data['extra_buttons'] = {'home': E.KEY_HOME, 'tv': E.KEY_GRAVE}
+            data['profiles']['wechat'] = {'home': 'Super', 'tv': 'Alt+A'}
+            data['navigation'] = {'enabled': True}
+            save(data, None, path)
+            voices, actions = [], []
+            hid_class = self.wrapper.contextual_remote_hid(self.upstream.RemoteHid,
+                            lambda: 'wechat', mappings=MappingStore(path))
+            hid = hid_class(lambda: voices.append('down'), lambda: voices.append('up'),
+                            log=lambda _: None,
+                            get_action=lambda code: {'single': 'command:send'} if code == E.KEY_ENTER else {},
+                            perform_action=lambda action, code: actions.append((action, code)))
+            class TimedDevice(FakeDevice):
+                def read_loop(device):
+                    for code, value, age in device.events:
+                        tick[0] += age
+                        hid.ui.navigation.tick('wechat')
+                        yield evdev.InputEvent(0, 0, E.EV_KEY, code, value)
+            # 在鼠标模式按确认和语音，随后退回普通模式再各按一次。
+            events = [(E.KEY_HOME,1,0), (E.KEY_HOME,0,.7),
+                      (E.KEY_ENTER,1,.01), (E.KEY_ENTER,0,.1),
+                      (E.KEY_F5,1,.01), (E.KEY_F5,0,.1),
+                      (E.KEY_GRAVE,1,.01), (E.KEY_GRAVE,0,.1),
+                      (E.KEY_HOME,1,.01), (E.KEY_HOME,0,.7),
+                      (E.KEY_ENTER,1,.01), (E.KEY_ENTER,0,.1),
+                      (E.KEY_F5,1,.01), (E.KEY_F5,0,.1)]
+            device = TimedDevice(events); tick = [100.]
+            # 隔离监控线程，避免用真实时间/设备干扰确定性事件序列。
+            from mapping_keyboard import MappingKeyboard
+            original_init = MappingKeyboard.__init__
+            def init(instance, *args, **kwargs):
+                original_init(instance, *args, **kwargs, monitor=False)
+            with patch('evdev.UInput', FakeKeyboard), patch.object(MappingKeyboard, '__init__', init), \
+                 patch('mouse_indicator.MouseIndicator', lambda **kw: Indicator()), \
+                 patch('key_detection.detecting', return_value=False):
+                hid._ensure_uinput(device)
+                hid.ui.navigation.clock = lambda: tick[0]
+                hid.ui.navigation.last_tick = tick[0]
+                keyboard = hid.ui.keyboard
+                hid.dev, hid.running = device, True
+                try:
+                    hid._read_events()
+                    mouse = hid.ui.navigation.mouse
+                finally: hid.stop()
+            self.assertEqual(actions, [('command:send', E.KEY_ENTER)])
+            self.assertEqual(voices, ['down', 'up'])
+            self.assertEqual(mouse.events, [(E.EV_KEY,E.BTN_LEFT,1), (E.EV_KEY,E.BTN_LEFT,0)])
+            self.assertEqual(keyboard.events, [(E.EV_KEY,c,v) for c,v in
+                            [(E.KEY_LEFTALT,1),(E.KEY_A,1),(E.KEY_A,0),(E.KEY_LEFTALT,0)]])

@@ -29,6 +29,13 @@ def detecting():
     return type(value) in (int, float) and 0 <= time.monotonic() - value < 1.5
 
 
+def mouse_mode_active():
+    state = read_state('navigation.json')
+    stamp = state.get('time', 0)
+    return (state.get('active') is True and type(stamp) in (int, float)
+            and 0 <= time.monotonic() - stamp < 2)
+
+
 class EventDevice:
     """检测开始前已按住的键仍交回原流程松开；检测中按下的键整次吞掉。"""
     def __init__(self, device, keyboard, mappings, focus):
@@ -36,6 +43,8 @@ class EventDevice:
         self.suppressed = set()
         self.forwarded = set()
         self.routed = set()
+        if hasattr(keyboard, 'set_physical_reader'):
+            keyboard.set_physical_reader(getattr(device, 'active_keys', None))
 
     def __getattr__(self, name): return getattr(self.device, name)
 
@@ -46,6 +55,12 @@ class EventDevice:
                 continue
             capture = detecting()
             if capture:
+                if hasattr(self.keyboard, 'navigation'):
+                    with self.keyboard.lock:
+                        self.keyboard.navigation.cancel('正在检测实体按键')
+                        if event.value == 0:
+                            self.keyboard.navigation.owned.pop(event.code, None)
+                            self.keyboard.navigation.physical.discard(event.code)
                 try:
                     write_state('event.json', {'code': event.code, 'value': event.value,
                                               'time': time.monotonic()})
@@ -56,6 +71,8 @@ class EventDevice:
                     self.suppressed.add(event.code)
                 elif event.value == 0:
                     self.suppressed.discard(event.code)
+                continue
+            if hasattr(self.keyboard, 'intercept') and self.keyboard.intercept(event):
                 continue
             self.mappings.refresh()
             if event.value == 1:

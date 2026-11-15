@@ -9,8 +9,9 @@ import time
 
 from keymap_config import (BUTTONS, EXTRA_BUTTONS, PROFILES, MappingStore, decode,
                            defaults, keymap_path, read_bytes, save, shortcut_codes, validate,
-                           pending_bindings, bind_button, recover_defaults)
+                           pending_bindings, bind_button, recover_defaults, navigation_options)
 from key_detection import read_state, write_state
+from key_presentation import MODES, button_view, runtime_mode_status
 from product_photo import cached_photo, fetch_photo
 import settings_status
 import service_controls
@@ -61,6 +62,7 @@ window.remote-settings { background: #f4f6f8; color: #1c2936; border-radius: 14p
 .settings-shell { border-radius: 0 0 14px 14px; }
 .remote-settings headerbar { background: #f4f6f8; color: #566474; border: 0; box-shadow: none; min-height: 34px; }
 .close-button { background: transparent; color: #415367; border: 0; border-radius: 18px; padding: 7px; }
+.close-button label { font-size: 23px; font-weight: 400; }
 .close-button:hover { background: #fbecec; color: #a33434; border-color: #edc5c5; }
 .settings-page { padding: 12px 28px; }
 .page-title { font-size: 27px; font-weight: 700; letter-spacing: 0.3px; }
@@ -81,6 +83,23 @@ window.remote-settings { background: #f4f6f8; color: #1c2936; border-radius: 14p
 .profile-tab { background: transparent; border: 0; color: #6e7c8c; padding: 7px 12px; border-radius: 9px; }
 .profile-tab:hover { background: #f0f3f6; }
 .profile-tab.active-profile { background: #ffffff; color: #1f3549; box-shadow: 0 1px 4px alpha(#24344d, 0.08); font-weight: 600; }
+.mode-tabs { background: #eef2f5; border-radius: 10px; padding: 3px; }
+.mode-tab { background: transparent; border: 0; color: #65788a; padding: 6px 10px; border-radius: 8px; font-size: 13px; }
+.mode-tab.active-mode { background: #286d8e; color: #ffffff; font-weight: 600; }
+.mode-tab:disabled { color: #9ca9b5; }
+.runtime-mode { color: #5b7181; background: #e9eef3; border-radius: 16px; padding: 6px 12px; font-size: 12px; }
+.runtime-mode.mouse { background: #e4eff7; color: #21628a; }
+.runtime-mode.warning { background: #fff2dc; color: #94631c; }
+.mode-note { color: #6b7e8d; font-size: 12px; }
+.function-title { color: #244b65; font-size: 19px; font-weight: 600; }
+.function-detail { color: #697d8e; font-size: 12px; }
+.function-badge { color: #3b7696; font-size: 11px; background: #edf4f8; border-radius: 7px; padding: 4px 8px; }
+.key-callout { background: #f4f7f9; color: #5d7385; border: 1px solid #e4ebef; border-radius: 6px; padding: 3px 2px; min-width: 0; min-height: 0; font-size: 10px; }
+.key-callout:hover { background: #e9f2f8; border-color: #94b8cf; }
+.key-callout.mouse-action { color: #2a6b90; background: #edf5fa; }
+.key-callout.selected-callout { background: #286d8e; border-color: #286d8e; color: #ffffff; }
+.fallback-key { font-size: 12px; padding: 7px 9px; }
+.fallback-key.selected-callout { background: #e4eff7; color: #21628a; border-color: #7ba8c2; }
 .muted { color: #7b8795; font-size: 12px; }
 .device-card { background: #ffffff; border: 1px solid #e6ebf0; border-radius: 20px; padding: 16px 22px; }
 .card-caption { color: #69798b; font-size: 12px; }
@@ -141,7 +160,7 @@ def main():
         import gi
         gi.require_version('Gtk', '4.0')
         gi.require_version('Graphene', '1.0')
-        from gi.repository import Gtk, Gdk, Gio, GLib, Graphene
+        from gi.repository import Gtk, Gdk, Gio, GLib, Graphene, Pango
     except (ImportError, ValueError):
         print('设置窗口需要 GTK 4：sudo apt install python3-gi gir1.2-gtk-4.0', file=sys.stderr)
         return 1
@@ -176,7 +195,7 @@ def main():
             self.add_css_class('remote-settings')
             header = Gtk.HeaderBar(show_title_buttons=False)
             header.set_title_widget(Gtk.Label(label='状态与日志'))
-            self.close_button = Gtk.Button(icon_name='window-close-symbolic')
+            self.close_button = Gtk.Button(label='×')
             self.close_button.add_css_class('close-button')
             self.close_button.set_tooltip_text('关闭状态与日志')
             self.close_button.update_property([Gtk.AccessibleProperty.LABEL], ['关闭状态与日志'])
@@ -305,6 +324,9 @@ def main():
             self.awaiting_saved = False
             self.draft = defaults()
             self.profile = 'codex'
+            self.view_mode = 'normal'
+            self.mode_buttons = {}
+            self.callout_buttons = {}
             self.selected = 'back'
             self.loading = False
             self.recording = False
@@ -328,11 +350,8 @@ def main():
             header.add_css_class('settings-header')
             header.set_title_widget(Gtk.Label(label='小米遥控器'))
             header.set_show_title_buttons(False)
-            self.close_button = Gtk.Button()
+            self.close_button = Gtk.Button(label='×')
             self.close_button.add_css_class('close-button')
-            close_icon = Gtk.Image.new_from_icon_name('window-close-symbolic')
-            close_icon.set_pixel_size(18)
-            self.close_button.set_child(close_icon)
             self.close_button.update_property([Gtk.AccessibleProperty.LABEL], ['关闭按键设置'])
             self.close_button.set_tooltip_text('关闭按键设置')
             self.close_button.connect('clicked', lambda _b: self.close())
@@ -368,6 +387,10 @@ def main():
             self.bluetooth.set_tooltip_text('查看设备状态与日志')
             self.bluetooth.connect('clicked', self.open_status)
             connection.append(self.bluetooth)
+            self.runtime_badge = Gtk.Label(label='当前：运行状态待确认')
+            self.runtime_badge.add_css_class('runtime-mode')
+            self.runtime_badge.set_tooltip_text('来自后台的实际运行状态；查看模式不会切换遥控器。打开设置窗口会退出鼠标模式。')
+            connection.append(self.runtime_badge)
             self.health = Gtk.Label(xalign=0, wrap=True)
             self.health.set_max_width_chars(26)
             self.health.add_css_class('status-value')
@@ -396,9 +419,9 @@ def main():
             device_card.add_css_class('device-card')
             device_card.set_size_request(350, -1)
             body.append(device_card)
-            device_title = Gtk.Label(label='选择一个按键', xalign=0)
-            device_title.add_css_class('card-caption')
-            device_card.append(device_title)
+            self.device_view_caption = Gtk.Label(label='普通模式按键', xalign=0)
+            self.device_view_caption.add_css_class('card-caption')
+            device_card.append(self.device_view_caption)
             stage = Gtk.Fixed(halign=Gtk.Align.CENTER)
             stage.set_size_request(270, 536)
             self.photo_stack = Gtk.Stack()
@@ -427,6 +450,21 @@ def main():
                 button.connect('clicked', lambda _b, n=name: self.select(n))
                 stage.put(button, round(origin_x + x * scale), round(origin_y + y * scale))
                 self.buttons[name] = button
+            callouts = {'power': (0, 28), 'voice': (200, 28), 'up': (0, 72),
+                'left': (0, 112), 'down': (0, 153), 'confirm': (200, 87),
+                'right': (200, 133), 'back': (0, 195), 'volume_up': (200, 195),
+                'home': (0, 246), 'volume_down': (200, 246), 'menu': (0, 297), 'tv': (200, 297)}
+            for name, (x, y) in callouts.items():
+                button = Gtk.Button()
+                button.add_css_class('key-callout')
+                button.set_size_request(70, -1)
+                label = Gtk.Label()
+                label.set_ellipsize(Pango.EllipsizeMode.END)
+                label.set_max_width_chars(7)
+                button.set_child(label)
+                button.connect('clicked', lambda _b, n=name: self.select(n))
+                stage.put(button, x, y)
+                self.callout_buttons[name] = button
             fallback = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=16,
                                valign=Gtk.Align.CENTER)
             fallback.set_size_request(270, 536)
@@ -438,6 +476,9 @@ def main():
             for index, name in enumerate(placements):
                 button = Gtk.Button(label=BUTTONS[name][0] + '键')
                 button.add_css_class('secondary-button')
+                button.add_css_class('fallback-key')
+                button.get_child().set_ellipsize(Pango.EllipsizeMode.END)
+                button.get_child().set_max_width_chars(10)
                 button.connect('clicked', lambda _b, n=name: self.select(n))
                 key_grid.attach(button, index % 2, index // 2, 1, 1)
                 self.fallback_buttons[name] = button
@@ -462,26 +503,54 @@ def main():
             self.detect_label.add_css_class('muted')
             device_card.append(self.detect_label)
 
-            editor = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=16, hexpand=True)
+            editor = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8, hexpand=True)
             editor.add_css_class('editor-card')
             body.append(editor)
             editor.append(profile_row)
+            mode_row = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=7)
+            editor.append(mode_row)
+            mode_label = Gtk.Label(label='查看按键模式', xalign=0)
+            mode_label.add_css_class('eyebrow')
+            mode_row.append(mode_label)
+            mode_tabs = Gtk.Box(spacing=4)
+            mode_tabs.add_css_class('mode-tabs')
+            mode_row.append(mode_tabs)
+            for mode, label in MODES.items():
+                button = Gtk.Button(label=label, hexpand=True)
+                button.add_css_class('mode-tab')
+                button.connect('clicked', lambda _b, m=mode: self.change_view_mode(m))
+                self.mode_buttons[mode] = button
+                mode_tabs.append(button)
+            self.mode_note = Gtk.Label(xalign=0, wrap=True)
+            self.mode_note.set_max_width_chars(28)
+            self.mode_note.add_css_class('mode-note')
+            mode_row.append(self.mode_note)
             editor.append(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL))
             breadcrumb = Gtk.Box(spacing=10)
             editor.append(breadcrumb)
             self.context_caption = Gtk.Label(xalign=0, hexpand=True)
             self.context_caption.add_css_class('eyebrow')
-            breadcrumb.append(self.context_caption)
+            # 应用与模式已由上方选项显示，键名和识别状态共用一行。
+            self.heading = Gtk.Label(xalign=0, hexpand=True)
+            self.heading.add_css_class('key-title')
+            breadcrumb.append(self.heading)
             self.binding_badge = Gtk.Label()
             self.binding_badge.add_css_class('binding-badge')
+            self.binding_badge.set_valign(Gtk.Align.CENTER)
             breadcrumb.append(self.binding_badge)
-            self.heading = Gtk.Label(xalign=0)
-            self.heading.add_css_class('key-title')
-            editor.append(self.heading)
+            function = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=7)
+            editor.append(function)
             self.current = Gtk.Label(xalign=0, wrap=True)
             self.current.set_max_width_chars(26)
-            self.current.add_css_class('muted')
-            editor.append(self.current)
+            self.current.add_css_class('function-title')
+            function.append(self.current)
+            self.function_scope = Gtk.Label(xalign=0, halign=Gtk.Align.START)
+            self.function_scope.add_css_class('function-badge')
+            function.append(self.function_scope)
+            self.function_detail = Gtk.Label(xalign=0, wrap=True)
+            self.function_detail.set_max_width_chars(28)
+            self.function_detail.add_css_class('function-detail')
+            function.append(self.function_detail)
             self.binding_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
             self.binding_box.add_css_class('binding-notice')
             editor.append(self.binding_box)
@@ -536,10 +605,39 @@ def main():
             self.control_message.set_max_width_chars(26)
             self.control_message.add_css_class('muted')
             self.runtime_controls.append(self.control_message)
+            self.navigation_expander = Gtk.Expander(label='鼠标操作 · 长按主页键切换')
+            self.navigation_expander.add_css_class('field-label')
+            self.runtime_controls.append(self.navigation_expander)
+            mouse_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+            self.navigation_expander.set_child(mouse_box)
+            mouse_row = Gtk.Box(spacing=10)
+            enabled_label = Gtk.Label(label='在 Codex 和微信中启用', xalign=0, hexpand=True)
+            enabled_label.add_css_class('field-label')
+            mouse_row.append(enabled_label)
+            self.navigation_enabled = Gtk.Switch(valign=Gtk.Align.CENTER)
+            self.navigation_enabled.connect('notify::active', self.change_navigation)
+            mouse_row.append(self.navigation_enabled)
+            mouse_box.append(mouse_row)
+            self.navigation_speeds = {}
+            for field, label in (('pointer_speed', '鼠标移动速度'), ('scroll_speed', '滚动速度')):
+                row = Gtk.Box(spacing=10)
+                speed_label = Gtk.Label(label=label, xalign=0, hexpand=True)
+                speed_label.add_css_class('field-label')
+                row.append(speed_label)
+                picker = Gtk.DropDown.new_from_strings(['很慢', '较慢', '标准', '较快', '很快'])
+                picker.add_css_class('action-picker')
+                picker.connect('notify::selected', self.change_navigation)
+                self.navigation_speeds[field] = picker
+                row.append(picker)
+                mouse_box.append(row)
+            mouse_hint = Gtk.Label(label='短按主页保留原动作。鼠标模式：方向键移动，确认点击／长按右键，音量键滚动。返回键：Codex 为 Esc，微信沿用设置（默认退格）。听写前先点击输入框并退出鼠标模式。', xalign=0, wrap=True)
+            mouse_hint.set_max_width_chars(26)
+            mouse_hint.add_css_class('muted')
+            mouse_box.append(mouse_hint)
             self.hint = Gtk.Label(xalign=0, wrap=True, vexpand=True, valign=Gtk.Align.END)
             self.hint.set_max_width_chars(26)
             self.hint.add_css_class('editor-hint')
-            editor.append(self.hint)
+            # 焦点说明放入动作提示，避免重复段落挤走常用运行控制。
 
             self.summary = Gtk.Label(xalign=0, wrap=True)
             self.summary.add_css_class('summary-text')
@@ -599,6 +697,24 @@ def main():
                 return
             active = self.autostart.get_active()
             self.run_control(lambda: service_controls.set_autostart(active))
+
+        def refresh_navigation(self):
+            previous = self.loading
+            self.loading = True
+            options = navigation_options(self.draft)
+            self.navigation_enabled.set_active(options['enabled'])
+            for field, picker in self.navigation_speeds.items():
+                picker.set_selected(options[field] - 1)
+            self.loading = previous
+
+        def change_navigation(self, *_):
+            if self.loading or not hasattr(self, 'navigation_speeds'):
+                return
+            self.draft['navigation'] = {'enabled': self.navigation_enabled.get_active(),
+                **{field: int(picker.get_selected()) + 1 for field, picker in self.navigation_speeds.items()}}
+            self.changed()
+            if self.draft['navigation']['enabled'] and 'home' not in self.draft['extra_buttons']:
+                self.message('启用鼠标操作前，请选择主页键并识别实体按键，再保存。')
 
         def run_control(self, action):
             if self.control_busy or self.closed:
@@ -718,12 +834,58 @@ def main():
             action = items.get(self.selected, 'default')
             labels = dict(PRESETS)
             self.shortcut_preview.set_text(labels.get(action, action.replace('+', '  +  ')))
-            self.shortcut_preview.set_visible(self.selected != 'voice' and action not in ('default', 'disabled') and not self.entry.get_visible())
+            # 当前功能已在上方统一展示，不再重复显示第二份快捷键。
+            self.shortcut_preview.set_visible(False)
             pending = pending_bindings(self.draft)
             self.save_button.set_sensitive(self.dirty and not pending and not self.detect_until and not self.load_error)
             self.save_button.set_tooltip_text('先识别：' + '、'.join(BUTTONS[b][0] for b in pending) if pending else '保存后自动生效')
             if pending:
                 self.message('还差一步：先识别' + '、'.join(BUTTONS[b][0] + '键' for b in pending))
+            self.refresh_presentation()
+
+        def refresh_presentation(self):
+            mouse = self.view_mode == 'mouse'
+            self.device_view_caption.set_text(PROFILES[self.profile] + ' · ' + MODES[self.view_mode] + '按键')
+            self.context_caption.set_text(PROFILES[self.profile] + '  /  ' + MODES[self.view_mode])
+            for mode, button in self.mode_buttons.items():
+                (button.add_css_class if mode == self.view_mode else button.remove_css_class)('active-mode')
+                button.set_sensitive(mode != 'mouse' or self.profile != 'other')
+            if self.profile == 'other':
+                note = '其他软件使用普通按键配置。'
+            elif mouse and not navigation_options(self.draft)['enabled']:
+                note = '正在查看鼠标按键。需在下方开启鼠标操作并保存。'
+            elif mouse and 'home' not in self.draft['extra_buttons']:
+                note = '先识别主页键，再保存，才能长按切换模式。'
+            elif navigation_options(self.draft)['enabled']:
+                note = '这里仅查看按键；实际切换请长按主页键。'
+            else:
+                note = '普通模式用于听写和文字编辑。'
+            self.mode_note.set_text(note)
+            for name in BUTTONS:
+                view = button_view(self.draft, self.profile, self.view_mode, name)
+                tooltip = BUTTONS[name][0] + '键 · ' + MODES[self.view_mode] + '\n' + view.title + '\n' + view.detail
+                for button in (self.buttons[name], self.callout_buttons[name], self.fallback_buttons[name]):
+                    button.set_tooltip_text(tooltip)
+                    button.update_property([Gtk.AccessibleProperty.LABEL], [BUTTONS[name][0] + '键：' + view.title])
+                callout = self.callout_buttons[name]
+                callout.get_child().set_text(view.short)
+                (callout.add_css_class if view.fixed else callout.remove_css_class)('mouse-action')
+                (callout.add_css_class if name == self.selected else callout.remove_css_class)('selected-callout')
+                self.fallback_buttons[name].set_label(BUTTONS[name][0] + '键\n' + view.short.replace('\n', ' / '))
+                (self.fallback_buttons[name].add_css_class if name == self.selected else self.fallback_buttons[name].remove_css_class)('selected-callout')
+            view = button_view(self.draft, self.profile, self.view_mode, self.selected)
+            self.current.set_text(view.title)
+            self.function_detail.set_text(view.detail)
+            self.function_scope.set_text('固定操作' if view.fixed else
+                '与普通模式共用设置' if mouse and view.editable else
+                '专用语音键' if not view.editable else '可自定义')
+            self.action_label.set_text(view.edit_label)
+
+        def change_view_mode(self, mode):
+            if mode not in MODES or (mode == 'mouse' and self.profile == 'other'):
+                return
+            self.view_mode = mode
+            self.select(self.selected)
 
         def select(self, name):
             self.selected = name
@@ -736,13 +898,13 @@ def main():
             self.heading.set_text(BUTTONS[name][0] + '键')
             self.device_caption.set_text(BUTTONS[name][0] + '键')
             self.context_caption.set_text(PROFILES[self.profile] + '  /  按键功能')
-            voice = name == 'voice'
+            view = button_view(self.draft, self.profile, self.view_mode, name)
             learned = name not in EXTRA_BUTTONS or name in self.draft['extra_buttons']
             self.binding_badge.set_text('已识别' if learned else '待识别')
             (self.binding_badge.remove_css_class if learned else self.binding_badge.add_css_class)('needs-binding')
-            self.actions.set_visible(not voice)
-            self.action_label.set_visible(not voice)
-            self.record.set_visible(not voice)
+            self.actions.set_visible(view.editable)
+            self.action_label.set_visible(view.editable)
+            self.record.set_visible(view.editable)
             self.binding_box.set_visible(name in EXTRA_BUTTONS and not learned)
             self.bind.set_label('重新识别此键' if learned else '识别' + BUTTONS[name][0] + '键')
             self.binding_message.set_text('实体按键已对应，可以直接设置动作。' if learned else '这个实体按键还没有对应到电脑。点下方按钮，然后轻按遥控器上的' + BUTTONS[name][0] + '键。')
@@ -751,28 +913,27 @@ def main():
             values = [key for key, _ in PRESETS]
             self.actions.set_selected(values.index(action) if action in values else len(values) - 1)
             self.entry.set_text(action if action not in ('default', 'disabled') else '')
-            self.entry.set_visible(not voice and action not in values)
-            if voice:
-                self.current.set_text({'codex': '按住说话，松开结束 Codex 听写。',
-                                      'wechat': '按住说话，松开结束微信听写。',
-                                      'other': '按住收音，不触发听写快捷键。'}[self.profile])
+            self.entry.set_visible(view.editable and action not in values)
+            if name == 'voice':
                 self.hint.set_text('语音键使用专用收音流程，暂不支持改为普通快捷键。')
+            elif view.fixed:
+                self.hint.set_text('这是鼠标模式的固定操作。普通模式的自定义设置仍会保留。')
             else:
-                default = ('退格（Backspace）' if name == 'back' and self.profile != 'other'
-                           else '回车（Enter）' if name == 'confirm' and self.profile != 'other'
-                           else '不执行动作' if name in {'confirm', 'power'} else '保留原始按键')
-                self.current.set_text('默认：' + default)
                 target = '仅在' + PROFILES[self.profile] + '位于前台时生效。' if self.profile != 'other' else '适用于 Codex、微信之外的窗口。'
-                self.hint.set_text(target + '\n组合键每按一次执行一次；方向、退格和音量支持长按连续操作。')
+                self.hint.set_text(target + ' 点击输入框后再编辑或发送文字。')
+            self.current.set_tooltip_text(self.hint.get_text())
             self.loading = False
             self.update_summary()
 
         def change_profile(self, *_):
             self.profile = list(PROFILES)[self.profiles.get_selected()]
+            if self.profile == 'other':
+                self.view_mode = 'normal'
             self.select(self.selected)
 
         def change_action(self, *_):
-            if self.loading: return
+            if self.loading or not button_view(self.draft, self.profile, self.view_mode, self.selected).editable:
+                return
             action = PRESETS[self.actions.get_selected()][0]
             self.entry.set_visible(action == 'custom')
             if action == 'custom':
@@ -783,7 +944,8 @@ def main():
                 self.changed()
 
         def change_custom(self, *_):
-            if self.loading or PRESETS[self.actions.get_selected()][0] != 'custom': return
+            if (self.loading or PRESETS[self.actions.get_selected()][0] != 'custom'
+                    or not button_view(self.draft, self.profile, self.view_mode, self.selected).editable): return
             self.draft['profiles'][self.profile][self.selected] = self.entry.get_text().strip()
             self.changed()
 
@@ -825,6 +987,7 @@ def main():
                 self.awaiting_saved = False
                 self.dirty = False
                 self.select(self.selected)
+                self.refresh_navigation()
                 self.message('已载入保存的设置')
                 self.update_summary()
             except (OSError, ValueError) as exc:
@@ -866,6 +1029,7 @@ def main():
                 if raw is None: raise ValueError('还没有上一次保存的备份')
                 self.draft = decode(raw)
                 self.select(self.selected)
+                self.refresh_navigation()
                 self.changed()
                 self.message('已取回上一次设置，点击保存完成撤销。')
                 self.update_summary()
@@ -951,6 +1115,15 @@ def main():
             if now >= self.next_status_check:
                 self.request_status()
             health = read_state('bridge.json')
+            navigation = read_state('navigation.json')
+            # 文件可能恰好在读取期间被后台更新，读取后取时间以免误报来自“未来”。
+            now = time.monotonic()
+            mode, label = runtime_mode_status(health, navigation, now,
+                                              service_controls.read_preferences().get('paused') is True)
+            if self.runtime_badge.get_text() != label:
+                self.runtime_badge.set_text(label)
+            for style, active in (('mouse', mode == 'mouse'), ('warning', mode in ('unknown', 'paused'))):
+                (self.runtime_badge.add_css_class if active else self.runtime_badge.remove_css_class)(style)
             level, text = (('error', '配置无法载入，请在更多操作中处理') if self.load_error
                            else mapping_status(self.original, health, now))
             if self.health.get_text() != text:

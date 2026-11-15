@@ -117,6 +117,20 @@ class Keyboard:
 
 
 class RelayTests(unittest.TestCase):
+    def test_mouse_mode_rejects_delayed_send_and_voice_commands(self):
+        self.relay.navigation_active = lambda: True
+        self.assertIn('鼠标模式', self.relay.apply('send', 100))
+        self.assertIn('鼠标模式', self.relay.apply('start', 101))
+        self.assertEqual(self.keyboard.events, [])
+        self.assertTrue(self.relay.wait_for_release)
+
+    def test_mouse_mode_watchdog_releases_existing_voice_key(self):
+        self.start()
+        self.relay.navigation_active = lambda: True
+        self.assertIn('鼠标模式', self.relay.watchdog())
+        self.assertEqual(self.keyboard.events, [(F5, 1), (F5, 0)])
+        self.assertTrue(self.relay.wait_for_release)
+
     def test_focus_change_releases_voice_and_blocks_duplicate_start_until_physical_release(self):
         self.focus = 'wechat'; self.start()
         self.focus = 'codex'

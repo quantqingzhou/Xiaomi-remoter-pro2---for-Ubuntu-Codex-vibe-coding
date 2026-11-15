@@ -4,15 +4,17 @@
 
 **专为 Linux 版 Codex 用户设计。** 把小米蓝牙遥控器 2 Pro 的麦克风和按键接入 Codex 听写，按住说话、松开转写、按确认键发送，用中文语音完成 vibe coding。项目标识为 `xiaomi-codex-remote`。
 
-**0.1.0-alpha.6 · 实验版本** · [快速开始](docs/QUICKSTART.md) · [按键设置](docs/KEY_SETTINGS.md) · [客户端更新后恢复](docs/CLIENT_UPDATES.md) · [微信可选扩展](docs/WECHAT.md) · [验证范围](docs/TESTING.md) · [故障排查](docs/TROUBLESHOOTING.md)
+**0.1.0-alpha.7 · 预发布版** · [快速开始](docs/QUICKSTART.md) · [按键设置](docs/KEY_SETTINGS.md) · [客户端更新后恢复](docs/CLIENT_UPDATES.md) · [微信可选扩展](docs/WECHAT.md) · [验证范围](docs/TESTING.md) · [故障排查](docs/TROUBLESHOOTING.md)
 
 本项目在 [SayAll for Linux](https://github.com/ZXC011/sayall-linux) 的蓝牙音频桥接基础上，提供持续运行的虚拟键盘、Codex 按键映射和断线恢复。Codex 功能使用客户端已有的听写能力，不安装本地语音识别模型。另提供默认关闭的微信语音输入扩展，需用户自行安装 Fcitx5 Vinput 并配置识别服务，详见[微信安装说明](docs/WECHAT.md)。
 
 完整方案默认要求先停用已核实客户端的听写降音量辅助程序，再安装遥控器桥接。播放保护不生效时，遥控器不会启动 F5 听写；不提供跳过检查继续使用的选项。这样从触发源阻止听写主动压低其他应用的播放音量，而不持续强制改写它们的音量。
 
+新增可选的 [Codex／微信鼠标操作](docs/MOUSE_NAVIGATION.md)：长按主页切换，方向键移动，确认点击，音量键滚动；微信在鼠标模式仍保留返回键退格。[下载 alpha.7 预发布版](https://github.com/quantqingzhou/Xiaomi-remoter-pro2---for-Ubuntu-Codex-vibe-coding/releases/tag/v0.1.0-alpha.7)。
+
 ## 按键
 
-本版提供[中文按键设置窗口](docs/KEY_SETTINGS.md)：点击遥控器产品图，为 Codex、微信和其他软件分别配置快捷键，支持检测实体按键、保存、恢复默认及撤销；顶部显示蓝牙状态，“状态与日志”集中查看设备状态和近期错误。下表是默认行为。
+本版提供[中文按键设置窗口](docs/KEY_SETTINGS.md)：按普通／鼠标模式查看产品图旁的功能标签，为 Codex、微信和其他软件分别配置快捷键，支持检测实体按键、保存、恢复默认及撤销。顶部显示蓝牙和实际运行模式，“状态与日志”集中查看设备状态和近期错误。模式预览不会启动鼠标操作；固定操作与共用配置分别标注。下表是普通模式的默认行为。
 
 | 按键 | Codex 前台 | 微信前台（扩展启用后） | 其他软件 |
 | --- | --- | --- | --- |

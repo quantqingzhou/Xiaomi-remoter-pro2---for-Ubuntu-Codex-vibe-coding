@@ -16,6 +16,7 @@ import evdev
 from remote_config import load_config, normalize_address
 from playback_protection import is_protected
 from keymap_config import MappingStore, OUTPUT_CODES
+from key_detection import mouse_mode_active
 
 RELEASE_GRACE_SECONDS = 1.5
 MAX_HOLD_SECONDS = 90
@@ -103,12 +104,14 @@ class RemoteState:
 
 
 class KeyRelay:
-    def __init__(self, keyboard, focus, remote_pressed, clock=time.monotonic, *, playback_safe=None, mappings=None):
+    def __init__(self, keyboard, focus, remote_pressed, clock=time.monotonic, *, playback_safe=None, mappings=None,
+                 navigation_active=lambda: False):
         self.keyboard, self.focus, self.remote_pressed, self.clock = keyboard, focus, remote_pressed, clock
         # 未明确确认保护有效时，不触发可能压低其他软件声音的客户端听写。
         self.playback_safe = playback_safe if playback_safe is not None else lambda: False
         self.held = False
         self.mappings = mappings
+        self.navigation_active = navigation_active
         self.held_code = None
         self.held_context = None
         self.deadline = 0.0
@@ -143,6 +146,10 @@ class KeyRelay:
     def apply(self, action, stamp):
         # 客户端时间戳反映子进程调度时间，不能代表 HID 事件的先后顺序。
         # 根据物理按键状态判断是否忽略迟到的开始或停止命令。
+        if action in ('start', 'send') and self.navigation_active():
+            if action == 'start':
+                self.wait_for_release = True
+            return '鼠标模式下不触发听写或发送，请先退出鼠标模式'
         if action == 'stop':
             if self.remote_pressed() is False:
                 self.wait_for_release = False
@@ -200,6 +207,9 @@ class KeyRelay:
             if self.wait_for_release and self.remote_pressed() is False:
                 self.wait_for_release = False
             return None
+        if self.navigation_active():
+            self.wait_for_release = True
+            return self.release() + '（鼠标模式已启用）'
         if self._focus_context() != self.held_context:
             self.wait_for_release = True
             return self.release() + '（已切换应用，请松开语音键后再录音）'
@@ -229,7 +239,8 @@ def serve():
             remote = RemoteState(address=config.remote_address, vendor=config.vendor_id,
                                  product=config.product_id)
             relay = KeyRelay(keyboard, focused_window_context, remote.pressed,
-                             playback_safe=lambda: is_protected(Path(config.dictation_helper)), mappings=MappingStore())
+                             playback_safe=lambda: is_protected(Path(config.dictation_helper)), mappings=MappingStore(),
+                             navigation_active=mouse_mode_active)
             running = True
 
             def shutdown(_signum, _frame):

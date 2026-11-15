@@ -4,6 +4,7 @@ import threading
 import time
 from evdev import ecodes as E
 from keymap_config import OUTPUT_CODES
+from mouse_navigation import MouseNavigation
 
 REPEATABLE = {E.KEY_BACKSPACE, E.KEY_DELETE, E.KEY_UP, E.KEY_DOWN, E.KEY_LEFT,
               E.KEY_RIGHT, E.KEY_PAGEUP, E.KEY_PAGEDOWN, E.KEY_VOLUMEUP, E.KEY_VOLUMEDOWN}
@@ -19,7 +20,7 @@ class MappingCapabilities:
 
 
 class MappingKeyboard:
-    def __init__(self, keyboard, focus, mappings, log=print, monitor=True):
+    def __init__(self, keyboard, focus, mappings, log=print, monitor=True, *, navigation_factory=MouseNavigation):
         self.keyboard, self.focus, self.mappings, self.log = keyboard, focus, mappings, log
         self.lock = threading.RLock()
         self.down = {}
@@ -28,6 +29,9 @@ class MappingKeyboard:
         self.stopped = threading.Event()
         self.thread = None
         self.last_report = 0
+        self.physical_reader = None
+        self.cached_context = 'other'
+        self.navigation = navigation_factory(mappings, self.tap, self.release, log=log)
         if monitor:
             self.thread = threading.Thread(target=self._monitor, daemon=True)
             self.thread.start()
@@ -53,10 +57,35 @@ class MappingKeyboard:
                 del self.refs[code]
         self.keyboard.syn()
 
+    def tap(self, codes):
+        self._press(codes)
+        self._release(codes)
+
+    def set_physical_reader(self, reader):
+        with self.lock:
+            self.physical_reader = reader
+
+    def intercept(self, event):
+        """在上游的确认发送和语音回调之前截获鼠标操作。"""
+        with self.lock:
+            self.check_focus()
+            try:
+                return self.navigation.handle(event, self.cached_context)
+            except Exception as exc:
+                # 已归鼠标处理的按键发生错误时仍吞掉，绝不降级成 Enter/F5。
+                self.navigation.cancel('输入错误，已退出')
+                self.log(f'鼠标操作异常：{exc}')
+                return True
+
     def check_focus(self):
         with self.lock:
             revision = self.mappings.refresh()
-            context = self.context() if self.down else None
+            context = self.context()
+            self.cached_context = context
+            if revision != self.revision:
+                self.navigation.cancel('配置已更新')
+            if self.navigation.active and context != self.navigation.context:
+                self.navigation.cancel('已切换应用')
             for state in self.down.values():
                 if state['codes'] and (state['context'] != context or revision != self.revision
                                        or time.monotonic() - state['since'] > 90):
@@ -101,8 +130,26 @@ class MappingKeyboard:
             self.down.clear()
 
     def _monitor(self):
-        while not self.stopped.wait(0.1):
-            self.check_focus()
+        next_check = 0
+        while not self.stopped.wait(0.02):
+            now = time.monotonic()
+            with self.lock:
+                if now >= next_check:
+                    self.check_focus()
+                    from key_detection import detecting
+                    if detecting() and (self.navigation.active or self.navigation.owned):
+                        self.navigation.cancel('正在检测实体按键')
+                    if self.physical_reader is not None and self.navigation.owned:
+                        try:
+                            self.navigation.reconcile(self.physical_reader())
+                        except (OSError, SystemError):
+                            self.navigation.reconcile(None)
+                    next_check = time.monotonic() + 0.1
+                try:
+                    self.navigation.tick(self.cached_context)
+                except Exception as exc:
+                    self.navigation.cancel('鼠标输入异常')
+                    self.log(f'鼠标操作异常：{exc}')
             if time.monotonic() - self.last_report >= 1:
                 from key_detection import write_state
                 import hashlib
@@ -119,4 +166,13 @@ class MappingKeyboard:
         if self.thread:
             self.thread.join()
         self.release()
+        self.navigation.close()
         self.keyboard.close()
+
+    def detach(self):
+        with self.lock:
+            self.release()
+            self.physical_reader = None
+            self.navigation.cancel('遥控器断开')
+            self.navigation.owned.clear()
+            self.navigation.physical.clear()
