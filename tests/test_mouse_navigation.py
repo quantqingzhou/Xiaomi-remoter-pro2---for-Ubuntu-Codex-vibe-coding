@@ -41,6 +41,7 @@ class NavigationTests(unittest.TestCase):
         self.data['extra_buttons'] = {'home': E.KEY_HOME, 'tv': E.KEY_GRAVE}
         self.data['profiles']['codex']['home'] = 'Super'
         self.data['profiles']['wechat'].update(home='Super', tv='Alt+A')
+        self.data['profiles']['other']['home'] = 'Super'
         self.data['navigation'] = {'enabled': True, 'pointer_speed': 3, 'scroll_speed': 3}
         C.save(self.data, None, self.path)
         self.store = C.MappingStore(self.path); self.store.refresh()
@@ -124,8 +125,17 @@ class NavigationTests(unittest.TestCase):
     def test_focus_change_cancels_pending_click_and_motion(self):
         self.enter(); self.raw(E.KEY_ENTER, 1); self.context = 'wechat'; self.advance(.2)
         self.raw(E.KEY_ENTER, 0)
-        self.assertFalse(self.nav.active)
+        self.assertTrue(self.nav.active)
+        self.assertEqual(self.nav.context, 'wechat')
         self.assertEqual(self.mouse.events, []); self.assertEqual(self.keyboard.events, [])
+        self.raw(E.KEY_RIGHT, 1); self.advance(.3)
+        self.context = 'other'; self.advance(.2)
+        before = list(self.mouse.events)
+        self.advance(.4); self.raw(E.KEY_RIGHT, 2); self.raw(E.KEY_RIGHT, 0)
+        self.assertEqual(before, self.mouse.events)
+        self.assertTrue(self.nav.active)
+        self.raw(E.KEY_ENTER, 1); self.raw(E.KEY_ENTER, 0)
+        self.assertEqual(self.mouse.events[-2:], [(E.EV_KEY,E.BTN_LEFT,1),(E.EV_KEY,E.BTN_LEFT,0)])
 
     def test_config_change_cancels_pending_home_without_super(self):
         self.raw(E.KEY_HOME, 1)
@@ -158,10 +168,35 @@ class NavigationTests(unittest.TestCase):
         self.raw(E.KEY_HOME, 1); self.advance(.61); self.raw(E.KEY_HOME, 0)
         self.assertFalse(self.nav.active); self.assertEqual(self.keyboard.events, [])
 
-    def test_other_apps_do_not_gain_a_new_home_gesture(self):
+    def test_other_and_claude_can_enter_exit_and_keep_short_super(self):
+        for context in ('other', 'claude'):
+            with self.subTest(context=context):
+                self.context = context
+                self.enter()
+                self.raw(E.KEY_HOME, 1); self.advance(.61); self.raw(E.KEY_HOME, 0)
+                self.assertFalse(self.nav.active)
+                self.raw(E.KEY_HOME, 1); self.advance(.1); self.raw(E.KEY_HOME, 0)
+                self.assertEqual(self.keyboard.events, [(E.EV_KEY,E.KEY_LEFTMETA,v) for v in (1,0)])
+                self.keyboard.events.clear()
+
+    def test_disabled_global_navigation_preserves_original_home(self):
+        self.data['navigation']['enabled'] = False
+        C.save(self.data, C.read_bytes(self.path), self.path)
         self.context = 'other'
         self.assertFalse(self.raw(E.KEY_HOME, 1)); self.advance(.7); self.raw(E.KEY_HOME, 0)
         self.assertFalse(self.nav.active)
+        self.assertEqual(self.keyboard.events, [(E.EV_KEY,E.KEY_LEFTMETA,v) for v in (1,0)])
+
+    def test_claude_mouse_backspace_repeat_and_focus_change_release(self):
+        self.context = 'claude'; self.enter()
+        self.raw(E.KEY_BACK, 1); self.raw(E.KEY_BACK, 2)
+        self.context = 'other'; self.advance(.1)
+        self.raw(E.KEY_BACK, 2); self.raw(E.KEY_BACK, 0)
+        self.assertEqual(self.keyboard.events, [(E.EV_KEY,E.KEY_BACKSPACE,v) for v in (1,2,0)])
+        self.assertTrue(self.nav.active)
+        self.keyboard.events.clear()
+        self.raw(E.KEY_BACK, 1); self.raw(E.KEY_BACK, 0)
+        self.assertEqual(self.keyboard.events, [(E.EV_KEY,E.KEY_ESC,v) for v in (1,0)])
 
     def test_wechat_screenshot_preserved_inside_mouse_mode(self):
         self.context = 'wechat'; self.enter(); self.raw(E.KEY_GRAVE, 1); self.raw(E.KEY_GRAVE, 0)
@@ -182,12 +217,14 @@ class NavigationTests(unittest.TestCase):
         self.raw(E.KEY_BACK, 1); self.context = 'codex'; self.advance(.1)
         self.raw(E.KEY_BACK, 2); self.raw(E.KEY_BACK, 0)
         self.assertEqual(self.keyboard.events, [(E.EV_KEY,E.KEY_DELETE,v) for v in (1,0)])
-        self.assertFalse(self.nav.active)
+        self.assertTrue(self.nav.active)
 
     def test_upstream_voice_aliases_are_swallowed_in_mouse_mode(self):
         self.enter()
-        for code in (173,191):
-            self.assertTrue(self.raw(code,1));self.assertTrue(self.raw(code,0))
+        for context in ('codex','wechat','claude','other'):
+            self.context = context; self.advance(.1)
+            for code in (E.KEY_F5,173,191):
+                self.assertTrue(self.raw(code,1));self.assertTrue(self.raw(code,0))
         self.assertEqual(self.keyboard.events, [])
 
     def test_no_indicator_means_no_mouse_mode(self):

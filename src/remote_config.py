@@ -34,12 +34,13 @@ class Settings:
     sayall_config: str | None = None
     dictation_helper: str = DEFAULT_DICTATION_HELPER
     wechat_wm_classes: tuple = ()
+    claude_wm_classes: tuple = ()
 
     @classmethod
     def from_dict(cls, data):
         if not isinstance(data, dict):
             raise ValueError('配置必须是 JSON 对象')
-        allowed = {'remote_address', 'vendor_id', 'product_id', 'codex_wm_classes', 'sayall_bridge', 'sayall_config', 'dictation_helper', 'wechat_wm_classes'}
+        allowed = {'remote_address', 'vendor_id', 'product_id', 'codex_wm_classes', 'sayall_bridge', 'sayall_config', 'dictation_helper', 'wechat_wm_classes', 'claude_wm_classes'}
         unknown = set(data) - allowed
         if unknown:
             raise ValueError('未知配置项：' + ', '.join(sorted(unknown)))
@@ -54,6 +55,12 @@ class Settings:
         wechat = tuple(x.strip().lower() for x in wechat)
         if set(classes) & set(wechat):
             raise ValueError('Codex 与微信的窗口类名不能重复')
+        claude = data.get('claude_wm_classes', [])
+        if not isinstance(claude, list) or not all(isinstance(x, str) and x.strip() for x in claude):
+            raise ValueError('claude_wm_classes 必须是窗口类名列表；空列表表示关闭 Claude 扩展')
+        claude = tuple(x.strip().lower() for x in claude)
+        if set(claude) & (set(classes) | set(wechat)):
+            raise ValueError('Claude 的窗口类名不能与 Codex 或微信重复')
         bridge = data.get('sayall_bridge', '/usr/bin/sayall-bridge')
         if not isinstance(bridge, str) or not Path(bridge).is_absolute() or '\n' in bridge or '\x00' in bridge:
             raise ValueError('sayall_bridge 必须是绝对路径')
@@ -68,14 +75,15 @@ class Settings:
             raise ValueError('dictation_helper 必须是客户端 native/dictation-ducking 的绝对路径')
         return cls(address, device_id(data.get('vendor_id', '2717')),
                    device_id(data.get('product_id', '32b8')),
-                   classes, bridge, shared, helper, wechat)
+                   classes, bridge, shared, helper, wechat, claude)
 
     def to_dict(self):
         return {'remote_address': self.remote_address, 'vendor_id': f'{self.vendor_id:04x}',
                 'product_id': f'{self.product_id:04x}',
                 'codex_wm_classes': list(self.codex_wm_classes), 'sayall_bridge': self.sayall_bridge,
                 'sayall_config': self.sayall_config, 'dictation_helper': self.dictation_helper,
-                'wechat_wm_classes': list(self.wechat_wm_classes)}
+                'wechat_wm_classes': list(self.wechat_wm_classes),
+                'claude_wm_classes': list(self.claude_wm_classes)}
 
 
 def config_path():

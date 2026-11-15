@@ -193,6 +193,7 @@ RestartSec=10
             f'ATTRS{{id/product}}=="{settings.product_id:04x}", '
             f'ATTRS{{uniq}}=="{settings.remote_address}", TAG+="uaccess"\n')
     files = {app / name: (REPO / 'src' / name).read_bytes() for name in RUNTIME_FILES}
+    files[app / 'VERSION'] = (REPO / 'VERSION').read_bytes()
     files.update({config: json_bytes(settings.to_dict()), sayall_config: json_bytes(changed),
                   units / KEY_SERVICE: key_unit.encode(),
                   units / STATUS_SERVICE: status_unit.encode(),
@@ -356,6 +357,8 @@ def main():
                          help='客户端 native/dictation-ducking 路径，安装及每次听写前都会检查播放保护')
     install.add_argument('--wechat-window-class', action='append', default=[], metavar='窗口类名',
                          help='可选微信扩展的精确窗口类名，可重复指定；需自行安装配置 Fcitx5 Vinput，默认关闭')
+    install.add_argument('--claude-window-class', action='append', default=[], metavar='窗口类名',
+                         help='可选 Claude 桌面扩展，映射 Ctrl+D 按住听写、Enter 发送及返回键退格，默认关闭；需先验证客户端快捷键')
     install.add_argument('--apply', action='store_true', help='执行安装计划；省略时只预览')
     uninstall = sub.add_parser('uninstall', help='预览恢复计划；添加 --apply 才会移除本程序管理的文件')
     uninstall.add_argument('--apply', action='store_true', help='执行卸载恢复计划；省略时只预览')
@@ -371,7 +374,8 @@ def main():
         if args.action == 'install':
             settings = Settings.from_dict({'remote_address': args.address, 'sayall_bridge': args.sayall_bridge,
                                            'dictation_helper': args.dictation_helper,
-                                           'wechat_wm_classes': args.wechat_window_class})
+                                           'wechat_wm_classes': args.wechat_window_class,
+                                           'claude_wm_classes': args.claude_window_class})
             files, shared = build_plan(layout, settings)
             print('安装计划（将备份 SayAll 语音设置和确认键映射）：')
             for path in files: print('  写入', path)
@@ -379,6 +383,8 @@ def main():
             print('客户端播放保护：' + ('已生效' if protected else '尚未生效，安装前必须完成 protect-client 步骤'))
             print('微信扩展：' + ('已选择；请自行确认 Fcitx5 Vinput、Alt_R 按住说话及识别服务已配置'
                                if settings.wechat_wm_classes else '关闭'))
+            print('Claude 扩展：' + ('已选择；请先确认 Ctrl+D 按住听写、松开停止及 Enter 发送可用'
+                                 if settings.claude_wm_classes else '关闭'))
             if args.apply:
                 if os.geteuid() == 0:
                     raise ValueError('请使用桌面登录用户运行，不要使用 sudo')

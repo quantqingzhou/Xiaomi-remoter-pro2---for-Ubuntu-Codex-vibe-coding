@@ -234,6 +234,8 @@ class MappingStore:
         return self.data['profiles'][context].get(button, 'default')
 
     def codes(self, button, context, original=None):
+        if context == 'claude' and button == 'back':
+            return (E.KEY_BACKSPACE,)
         action = self.action(button, context)
         if action == 'disabled':
             return ()

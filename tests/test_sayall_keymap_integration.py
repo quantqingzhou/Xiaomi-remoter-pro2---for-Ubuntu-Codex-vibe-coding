@@ -104,6 +104,21 @@ class IntegrationTests(unittest.TestCase):
         keyboard, _, _ = self.run_events(True, [(E.KEY_BACK, 1)])
         self.assertEqual(keyboard.events, [(E.EV_KEY, E.KEY_BACKSPACE, v) for v in [1, 0]])
 
+    def test_claude_backspace_preserves_voice_send_and_releases_on_detach(self):
+        from keymap_config import MappingStore
+        with tempfile.TemporaryDirectory() as folder, patch('key_detection.detecting', return_value=False):
+            store = MappingStore(Path(folder) / 'keymap.json')
+            keyboard, voices, actions = self.run_events('claude', [
+                (E.KEY_BACK, 1), (E.KEY_BACK, 2), (E.KEY_BACK, 0),
+                (E.KEY_F5, 1), (E.KEY_F5, 0), (E.KEY_ENTER, 1), (E.KEY_ENTER, 0),
+                (E.KEY_UP, 1), (E.KEY_UP, 0)], store)
+            self.assertEqual(keyboard.events, [(E.EV_KEY, E.KEY_BACKSPACE, v) for v in [1, 2, 0]]
+                             + [(E.EV_KEY, E.KEY_UP, v) for v in [1, 0]])
+            self.assertEqual(voices, ['down', 'up'])
+            self.assertEqual(actions, [('command:send', E.KEY_ENTER)])
+            keyboard, _, _ = self.run_events('claude', [(E.KEY_BACK, 1)], store)
+            self.assertEqual(keyboard.events, [(E.EV_KEY, E.KEY_BACKSPACE, v) for v in [1, 0]])
+
     def test_custom_router_with_real_upstream_keeps_voice_and_confirm_path(self):
         from keymap_config import MappingStore, defaults, save
         with tempfile.TemporaryDirectory() as folder:

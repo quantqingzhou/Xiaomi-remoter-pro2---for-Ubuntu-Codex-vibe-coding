@@ -40,7 +40,7 @@ class MappingKeyboard:
 
     def context(self):
         value = self.focus()
-        return 'codex' if value is True else value if value in ('codex', 'wechat') else 'other'
+        return 'codex' if value is True else value if value in ('codex', 'wechat', 'claude') else 'other'
 
     def _press(self, codes):
         for code in codes:
@@ -84,8 +84,7 @@ class MappingKeyboard:
             self.cached_context = context
             if revision != self.revision:
                 self.navigation.cancel('配置已更新')
-            if self.navigation.active and context != self.navigation.context:
-                self.navigation.cancel('已切换应用')
+            self.navigation.change_context(context)
             for state in self.down.values():
                 if state['codes'] and (state['context'] != context or revision != self.revision
                                        or time.monotonic() - state['since'] > 90):

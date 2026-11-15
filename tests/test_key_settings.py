@@ -13,7 +13,7 @@ from evdev import ecodes as E
 import keymap_config as C
 import key_detection as D
 from mapping_keyboard import MappingKeyboard, MappingCapabilities
-from key_settings import mapping_status, recorded_shortcut
+from key_settings import mapping_status, recorded_shortcut, app_version
 
 
 class Keyboard:
@@ -308,6 +308,17 @@ class ConfirmTests(unittest.TestCase):
 
 
 class FeedbackTests(unittest.TestCase):
+    def test_version_matches_source_and_installed_layout_and_missing_is_unknown(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            source = root / 'src'; source.mkdir()
+            self.assertEqual(app_version(source),'版本未知')
+            (root / 'VERSION').write_text('0.1.0-alpha.8\n')
+            self.assertEqual(app_version(source),'0.1.0-alpha.8')
+            self.assertEqual(app_version(root),'0.1.0-alpha.8')
+            (root / 'VERSION').write_text('invalid\nversion')
+            self.assertEqual(app_version(source),'版本未知')
+
     def test_saved_bytes_need_fresh_matching_bridge_acknowledgement(self):
         raw = json.dumps(C.defaults()).encode()
         health = {'time': 10, 'sha256': hashlib.sha256(raw).hexdigest()}

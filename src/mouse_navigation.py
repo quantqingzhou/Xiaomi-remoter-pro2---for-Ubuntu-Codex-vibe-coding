@@ -99,6 +99,18 @@ class MouseNavigation:
             self.cancel(publish=False)
             self.log(f'鼠标模式未启动：{exc}')
 
+    def change_context(self, context):
+        """模式全局保留，但已按住的动作不能跨应用继续或补发点击。"""
+        if not self.active or self.context == context:
+            return
+        self.release_keys()
+        for state in self.owned.values():
+            state['cancelled'] = True
+        self.fraction = [0.0, 0.0]
+        self.context = context
+        self.hint, self.hint_until = '', 0
+        self.publish()
+
     def reconcile(self, pressed):
         """物理状态兜底：漏了松开事件也立即停止移动，不补发点击。"""
         if pressed is None:
@@ -139,10 +151,10 @@ class MouseNavigation:
         # SayAll 0.3.0 将 191 命名为 F20；使用它实际识别的码，不能用 evdev.KEY_F20(190)。
         if self.active and code in (E.KEY_REFRESH, 191):
             button = 'voice'
-        if self.active and button == 'back' and context == 'wechat':
-            # 微信输入框在鼠标模式仍可编辑；交回普通映射处理重复与成对松开。
+        if self.active and button == 'back' and context in ('wechat', 'claude'):
+            # 微信、Claude 输入框在鼠标模式仍可编辑；普通映射负责重复与松开。
             return False
-        home = (button == 'home' and options['enabled'] and context in ('codex', 'wechat'))
+        home = button == 'home' and options['enabled']
         if value != 1 or not (home or (self.active and button in MOUSE_BUTTONS)):
             return False
         state = {'button': button, 'since': self.clock(), 'context': context,
@@ -187,8 +199,9 @@ class MouseNavigation:
         dt = max(0, min(now - self.last_tick, 0.05))
         self.last_tick = now
         options = navigation_options(self.mappings.data)
-        if self.active and (context != self.context or not options['enabled']):
-            self.cancel('已切换应用或关闭功能')
+        if self.active and not options['enabled']:
+            self.cancel('已关闭功能')
+        self.change_context(context)
         for code, state in list(self.owned.items()):
             self._advance(code, state, context, now)
         if not self.active:

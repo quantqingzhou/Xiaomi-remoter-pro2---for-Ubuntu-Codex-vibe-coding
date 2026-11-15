@@ -61,6 +61,7 @@ class ManagementTests(unittest.TestCase):
         self.assertIn(app / 'startup_guard.py', files)
         self.assertIn(app / 'settings_status.py', files)
         self.assertIn(app / 'service_controls.py', files)
+        self.assertEqual(files[app / 'VERSION'], (manage.REPO / 'VERSION').read_bytes())
         self.assertIn(self.layout.data / 'icons/hicolor/scalable/apps/xiaomi-codex-remote.svg', files)
         dropin = files[self.layout.config / 'systemd/user/sayall-bridge.service.d' / manage.DROPIN].decode()
         self.assertIn('RestartSec=10', dropin)
@@ -88,18 +89,21 @@ class ManagementTests(unittest.TestCase):
                 self.assertRaisesRegex(ValueError, manage.STATUS_SERVICE):
             manage.require_stopped()
 
-    def test_optional_wechat_cli_is_explicit_and_preview_does_not_write(self):
+    def test_optional_app_cli_is_explicit_and_preview_does_not_write(self):
         args = ['manage.py', 'install', '--address', 'AA:BB:CC:DD:EE:FF',
-                '--wechat-window-class', 'WeChat', '--wechat-window-class', 'weixin']
+                '--wechat-window-class', 'WeChat', '--wechat-window-class', 'weixin',
+                '--claude-window-class', 'com.anthropic.Claude']
         with patch.object(sys, 'argv', args), patch.object(manage.Layout, 'for_user', return_value=self.layout), \
                 patch.object(manage, 'build_plan', wraps=manage.build_plan) as build, \
                 patch.object(manage, 'is_protected', return_value=True), redirect_stdout(io.StringIO()):
             self.assertEqual(manage.main(), 0)
         selected = build.call_args.args[1]
         self.assertEqual(selected.wechat_wm_classes, ('wechat', 'weixin'))
+        self.assertEqual(selected.claude_wm_classes, ('com.anthropic.claude',))
         files, _ = manage.build_plan(self.layout, selected)
         cfg = json.loads(files[self.layout.config / manage.NAME / 'config.json'])
         self.assertEqual(cfg['wechat_wm_classes'], ['wechat', 'weixin'])
+        self.assertEqual(cfg['claude_wm_classes'], ['com.anthropic.claude'])
         self.assertFalse(self.layout.config.exists())
 
     def test_cli_install_without_protection_never_writes_or_stops_services(self):

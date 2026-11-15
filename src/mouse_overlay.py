@@ -32,7 +32,7 @@ def main():
         window.set_visual(visual)
     box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
     box.set_border_width(12)
-    title = Gtk.Label(label='鼠标模式 · 长按主页退出')
+    title = Gtk.Label(label='全局鼠标模式 · 长按主页退出')
     help_text = Gtk.Label(label='方向键移动 · 确认点击 · 音量键滚动')
     box.pack_start(title, False, False, 0)
     box.pack_start(help_text, False, False, 0)

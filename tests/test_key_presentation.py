@@ -20,12 +20,41 @@ class PresentationTests(unittest.TestCase):
 
     def test_preview_does_not_modify_configuration(self):
         before = copy.deepcopy(self.data)
-        for profile in ('codex','wechat','other'):
+        for profile in ('codex','wechat','claude','other'):
             for mode in ('normal','mouse'):
                 for name in BUTTONS:
                     view = self.view(profile,mode,name)
                     self.assertTrue(view.short and view.title and view.detail)
         self.assertEqual(self.data,before)
+
+    def test_claude_dedicated_keys_do_not_inherit_other_overrides(self):
+        self.data['profiles']['other'].update(back='Ctrl+Z', confirm='disabled')
+        for button, text in (('voice','Ctrl + D'),('confirm','Enter'),('back','Backspace')):
+            view = self.view('claude','normal',button)
+            self.assertIn(text, view.title)
+            self.assertFalse(view.editable)
+            self.assertTrue(view.fixed)
+        self.assertIn('Backspace',self.view('claude','mouse','back').title)
+        self.assertIn('右键',self.view('claude','mouse','confirm').title)
+        self.assertIn('退出',self.view('claude','mouse','voice').title)
+
+    def test_claude_shared_keys_read_current_other_mapping_without_new_profile(self):
+        self.data['profiles']['other'].update(home='Super',tv='Alt+A')
+        before = copy.deepcopy(self.data)
+        for mode in ('normal','mouse'):
+            view = self.view('claude',mode,'tv')
+            self.assertIn('Alt',view.title)
+            self.assertIn('其他软件',view.detail)
+            self.assertFalse(view.editable or view.fixed)
+            self.assertIn('Super',self.view('claude',mode,'home').title)
+        self.assertEqual(before,self.data)
+        self.assertNotIn('claude',self.data['profiles'])
+
+    def test_overview_help_matches_normal_confirm_and_short_home(self):
+        for profile in ('codex','wechat','claude','other'):
+            for button in ('home','confirm'):
+                self.assertIn('活动概览',self.view(profile,'normal',button).detail)
+        self.assertNotIn('活动概览',self.view('claude','mouse','confirm').detail)
 
     def test_mouse_direction_masks_custom_normal_action_without_erasing_it(self):
         self.data['profiles']['codex']['up']='Ctrl+Z'
@@ -88,9 +117,13 @@ class PresentationTests(unittest.TestCase):
         self.assertIn('只显示提示',view.detail)
         self.assertFalse(view.editable)
 
-    def test_other_software_has_no_mouse_overrides(self):
-        for button in BUTTONS:
-            self.assertEqual(self.view('other','normal',button),self.view('other','mouse',button))
+    def test_other_software_has_global_mouse_overrides_and_claude_back_note(self):
+        for button in ('up','down','left','right','confirm','back','voice','volume_up','volume_down'):
+            self.assertTrue(self.view('other','mouse',button).fixed)
+            self.assertNotEqual(self.view('other','normal',button),self.view('other','mouse',button))
+        self.assertIn('Claude',self.view('other','mouse','back').detail)
+        self.assertIn('长按',self.view('other','normal','home').title)
+        self.assertIn('退出',self.view('other','mouse','home').title)
 
     def test_disabled_key_and_incomplete_custom_text_are_renderable(self):
         self.data['profiles']['wechat']['back']='disabled'
@@ -103,7 +136,10 @@ class PresentationTests(unittest.TestCase):
 class RuntimeStatusTests(unittest.TestCase):
     def test_live_mouse_status_names_actual_application(self):
         self.assertEqual(runtime_mode_status({'time':100},{'time':100,'active':True,'context':'wechat'},101),
-                         ('mouse','当前：鼠标模式 · 微信'))
+                         ('mouse','当前：全局鼠标模式 · 微信'))
+        for context, label in (('claude','Claude'),('other','其他软件')):
+            self.assertEqual(runtime_mode_status({'time':100},{'time':100,'active':True,'context':context},101),
+                             ('mouse','当前：全局鼠标模式 · '+label))
 
     def test_preview_or_draft_configuration_is_not_an_input(self):
         self.assertEqual(runtime_mode_status({'time':100},{},101),('normal','当前：普通模式'))

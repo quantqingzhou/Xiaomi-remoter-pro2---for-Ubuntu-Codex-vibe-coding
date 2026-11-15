@@ -3,15 +3,17 @@
 """小米蓝牙遥控器 2 Pro 的中文按键设置窗口。"""
 import copy
 import hashlib
+from pathlib import Path
+import re
 import sys
 import threading
 import time
 
-from keymap_config import (BUTTONS, EXTRA_BUTTONS, PROFILES, MappingStore, decode,
+from keymap_config import (BUTTONS, EXTRA_BUTTONS, MappingStore, decode,
                            defaults, keymap_path, read_bytes, save, shortcut_codes, validate,
                            pending_bindings, bind_button, recover_defaults, navigation_options)
 from key_detection import read_state, write_state
-from key_presentation import MODES, button_view, runtime_mode_status
+from key_presentation import MODES, VIEW_PROFILES as PROFILES, button_view, runtime_mode_status
 from product_photo import cached_photo, fetch_photo
 import settings_status
 import service_controls
@@ -26,6 +28,19 @@ PRESETS = [
     ('VolumeUp', '音量增大'), ('VolumeDown', '音量减小'), ('Mute', '静音切换'),
     ('PlayPause', '播放 / 暂停'), ('Super', 'Super（打开活动概览）'), ('custom', '自定义组合键…'),
 ]
+
+
+def app_version(directory=None):
+    """安装目录和源码目录共用 VERSION；缺失时不编造版本号。"""
+    directory = Path(directory) if directory is not None else Path(__file__).resolve().parent
+    for path in (directory / 'VERSION', directory.parent / 'VERSION'):
+        try:
+            version = path.read_text().strip()
+            if re.fullmatch(r'\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?', version):
+                return version
+        except OSError:
+            pass
+    return '版本未知'
 
 
 def mapping_status(raw, health, now):
@@ -80,7 +95,7 @@ window.remote-settings { background: #f4f6f8; color: #1c2936; border-radius: 14p
 .eyebrow { color: #788493; font-size: 12px; font-weight: 600; }
 .segmented { background: #e7ebf0; border-radius: 12px; padding: 4px; }
 .remote-settings button { box-shadow: none; text-shadow: none; }
-.profile-tab { background: transparent; border: 0; color: #6e7c8c; padding: 7px 12px; border-radius: 9px; }
+.profile-tab { background: transparent; border: 0; color: #6e7c8c; padding: 7px 8px; border-radius: 9px; }
 .profile-tab:hover { background: #f0f3f6; }
 .profile-tab.active-profile { background: #ffffff; color: #1f3549; box-shadow: 0 1px 4px alpha(#24344d, 0.08); font-weight: 600; }
 .mode-tabs { background: #eef2f5; border-radius: 10px; padding: 3px; }
@@ -378,6 +393,9 @@ def main():
             subtitle = Gtk.Label(label='小米蓝牙遥控器 2 Pro  /  Linux', xalign=0)
             subtitle.add_css_class('subtitle')
             titles.append(subtitle)
+            self.version_label = Gtk.Label(label='版本 ' + app_version(), xalign=0)
+            self.version_label.add_css_class('eyebrow')
+            titles.append(self.version_label)
             heading_row.append(titles)
             connection = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5,
                                  valign=Gtk.Align.CENTER, halign=Gtk.Align.END)
@@ -389,7 +407,7 @@ def main():
             connection.append(self.bluetooth)
             self.runtime_badge = Gtk.Label(label='当前：运行状态待确认')
             self.runtime_badge.add_css_class('runtime-mode')
-            self.runtime_badge.set_tooltip_text('来自后台的实际运行状态；查看模式不会切换遥控器。打开设置窗口会退出鼠标模式。')
+            self.runtime_badge.set_tooltip_text('来自后台的实际运行状态；查看模式不会切换遥控器。鼠标模式在切换应用后保持，长按主页键退出。')
             connection.append(self.runtime_badge)
             self.health = Gtk.Label(xalign=0, wrap=True)
             self.health.set_max_width_chars(26)
@@ -551,6 +569,10 @@ def main():
             self.function_detail.set_max_width_chars(28)
             self.function_detail.add_css_class('function-detail')
             function.append(self.function_detail)
+            self.shared_edit = Gtk.Button(label='编辑“其他软件”的共用设置', halign=Gtk.Align.START)
+            self.shared_edit.add_css_class('secondary-button')
+            self.shared_edit.connect('clicked', lambda _b: self.profiles.set_selected(list(PROFILES).index('other')))
+            function.append(self.shared_edit)
             self.binding_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
             self.binding_box.add_css_class('binding-notice')
             editor.append(self.binding_box)
@@ -611,7 +633,7 @@ def main():
             mouse_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
             self.navigation_expander.set_child(mouse_box)
             mouse_row = Gtk.Box(spacing=10)
-            enabled_label = Gtk.Label(label='在 Codex 和微信中启用', xalign=0, hexpand=True)
+            enabled_label = Gtk.Label(label='在所有应用中启用', xalign=0, hexpand=True)
             enabled_label.add_css_class('field-label')
             mouse_row.append(enabled_label)
             self.navigation_enabled = Gtk.Switch(valign=Gtk.Align.CENTER)
@@ -630,7 +652,7 @@ def main():
                 self.navigation_speeds[field] = picker
                 row.append(picker)
                 mouse_box.append(row)
-            mouse_hint = Gtk.Label(label='短按主页保留原动作。鼠标模式：方向键移动，确认点击／长按右键，音量键滚动。返回键：Codex 为 Esc，微信沿用设置（默认退格）。听写前先点击输入框并退出鼠标模式。', xalign=0, wrap=True)
+            mouse_hint = Gtk.Label(label='长按主页全局切换，短按保留原动作。方向键移动，确认点击／长按右键，音量键滚动。返回键：微信沿用设置，Claude 为退格，其他为 Esc。听写前先点击输入框并退出鼠标模式。', xalign=0, wrap=True)
             mouse_hint.set_max_width_chars(26)
             mouse_hint.add_css_class('muted')
             mouse_box.append(mouse_hint)
@@ -659,6 +681,8 @@ def main():
                 button = Gtk.Button(label=label)
                 button.get_child().set_xalign(0)
                 button.add_css_class('flat')
+                if label == '恢复本应用默认':
+                    self.reset_profile_button = button
                 button.connect('clicked', lambda _b, cb=callback: (popover.popdown(), cb()))
                 menu.append(button)
             self.repair_button = Gtk.Button(label='备份损坏配置并恢复默认…')
@@ -828,7 +852,7 @@ def main():
             self.update_summary()
 
         def update_summary(self):
-            items = self.draft['profiles'][self.profile]
+            items = self.draft['profiles']['other' if self.profile == 'claude' else self.profile]
             descriptions = [f'{BUTTONS[b][0]} → {a}' for b, a in items.items() if a != 'default']
             self.summary.set_text('  ·  '.join(descriptions) if descriptions else '当前应用使用默认按键配置')
             action = items.get(self.selected, 'default')
@@ -849,17 +873,17 @@ def main():
             self.context_caption.set_text(PROFILES[self.profile] + '  /  ' + MODES[self.view_mode])
             for mode, button in self.mode_buttons.items():
                 (button.add_css_class if mode == self.view_mode else button.remove_css_class)('active-mode')
-                button.set_sensitive(mode != 'mouse' or self.profile != 'other')
-            if self.profile == 'other':
-                note = '其他软件使用普通按键配置。'
-            elif mouse and not navigation_options(self.draft)['enabled']:
+                button.set_sensitive(True)
+            if mouse and not navigation_options(self.draft)['enabled']:
                 note = '正在查看鼠标按键。需在下方开启鼠标操作并保存。'
             elif mouse and 'home' not in self.draft['extra_buttons']:
                 note = '先识别主页键，再保存，才能长按切换模式。'
             elif navigation_options(self.draft)['enabled']:
-                note = '这里仅查看按键；实际切换请长按主页键。'
+                note = '长按主页切换全局鼠标模式；这里仅查看按键。'
             else:
                 note = '普通模式用于听写和文字编辑。'
+            if self.profile == 'claude' and not mouse:
+                note = '启用 Claude 接入后生效；语音、发送和退格为专用按键。'
             self.mode_note.set_text(note)
             for name in BUTTONS:
                 view = button_view(self.draft, self.profile, self.view_mode, name)
@@ -877,12 +901,13 @@ def main():
             self.current.set_text(view.title)
             self.function_detail.set_text(view.detail)
             self.function_scope.set_text('固定操作' if view.fixed else
+                '沿用其他软件配置' if self.profile == 'claude' else
                 '与普通模式共用设置' if mouse and view.editable else
                 '专用语音键' if not view.editable else '可自定义')
             self.action_label.set_text(view.edit_label)
 
         def change_view_mode(self, mode):
-            if mode not in MODES or (mode == 'mouse' and self.profile == 'other'):
+            if mode not in MODES:
                 return
             self.view_mode = mode
             self.select(self.selected)
@@ -899,6 +924,8 @@ def main():
             self.device_caption.set_text(BUTTONS[name][0] + '键')
             self.context_caption.set_text(PROFILES[self.profile] + '  /  按键功能')
             view = button_view(self.draft, self.profile, self.view_mode, name)
+            self.shared_edit.set_visible(self.profile == 'claude' and not view.fixed)
+            self.reset_profile_button.set_sensitive(self.profile != 'claude')
             learned = name not in EXTRA_BUTTONS or name in self.draft['extra_buttons']
             self.binding_badge.set_text('已识别' if learned else '待识别')
             (self.binding_badge.remove_css_class if learned else self.binding_badge.add_css_class)('needs-binding')
@@ -909,7 +936,7 @@ def main():
             self.bind.set_label('重新识别此键' if learned else '识别' + BUTTONS[name][0] + '键')
             self.binding_message.set_text('实体按键已对应，可以直接设置动作。' if learned else '这个实体按键还没有对应到电脑。点下方按钮，然后轻按遥控器上的' + BUTTONS[name][0] + '键。')
             (self.binding_box.add_css_class if learned else self.binding_box.remove_css_class)('binding-complete')
-            action = self.draft['profiles'][self.profile].get(name, 'default')
+            action = self.draft['profiles']['other' if self.profile == 'claude' else self.profile].get(name, 'default')
             values = [key for key, _ in PRESETS]
             self.actions.set_selected(values.index(action) if action in values else len(values) - 1)
             self.entry.set_text(action if action not in ('default', 'disabled') else '')
@@ -917,7 +944,10 @@ def main():
             if name == 'voice':
                 self.hint.set_text('语音键使用专用收音流程，暂不支持改为普通快捷键。')
             elif view.fixed:
-                self.hint.set_text('这是鼠标模式的固定操作。普通模式的自定义设置仍会保留。')
+                self.hint.set_text('这是已启用接入后的 Claude 专用操作。' if self.profile == 'claude' and self.view_mode == 'normal'
+                    else '这是此模式的固定操作。普通模式的自定义设置仍会保留。')
+            elif self.profile == 'claude':
+                self.hint.set_text('此键与其他软件共用设置；点击上方入口编辑。')
             else:
                 target = '仅在' + PROFILES[self.profile] + '位于前台时生效。' if self.profile != 'other' else '适用于 Codex、微信之外的窗口。'
                 self.hint.set_text(target + ' 点击输入框后再编辑或发送文字。')
@@ -927,8 +957,6 @@ def main():
 
         def change_profile(self, *_):
             self.profile = list(PROFILES)[self.profiles.get_selected()]
-            if self.profile == 'other':
-                self.view_mode = 'normal'
             self.select(self.selected)
 
         def change_action(self, *_):
@@ -1019,6 +1047,9 @@ def main():
             dialog.present()
 
         def reset_profile(self, *_):
+            if self.profile == 'claude':
+                self.message('Claude 专用键为固定操作；共用按键请到“其他软件”页编辑。')
+                return
             self.draft['profiles'][self.profile] = {}
             self.select(self.selected)
             self.changed()

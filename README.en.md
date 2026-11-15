@@ -4,7 +4,7 @@
 
 **Designed for Linux users of the Codex desktop client.** Use a Xiaomi Bluetooth Remote 2 Pro for voice coding: hold its voice button to dictate, release to finish, and press the center button to send.
 
-**0.1.0-alpha.7 — pre-release.** The settings window and desktop notifications currently use Chinese. This README provides English setup and operation instructions.
+**0.1.0-alpha.8 — pre-release.** The settings window and desktop notifications currently use Chinese. This README provides English setup and operation instructions.
 
 Built on [SayAll for Linux](https://github.com/ZXC011/sayall-linux), this project adds application-specific keys, playback protection, reconnect checks, a visual key editor, and status diagnostics. Codex dictation uses the client's existing speech recognition; this project does not install a local speech recognition model. It is an independent community project, not an official Xiaomi or OpenAI product.
 
@@ -25,15 +25,19 @@ The prototype has passed real dictation, release-to-stop, center-button send, Bl
 
 Click the target input field first. Window detection cannot determine focus within an application. Sending is blocked while dictation is still active. Focus changes, disconnection and mapping changes release held outputs. Voice has a dedicated lifecycle and cannot be assigned as an ordinary shortcut.
 
-## Optional mouse navigation (alpha.7)
+The alpha.8 release adds optional Claude Desktop Ctrl+D hold-to-dictate, Enter to send, and Backspace on the remote Back button. The user verified these three controls on one machine. Claude must run through XWayland and its shortcut must be checked first; no extra speech backend is added. Claude also supports the global mouse mode described below; a dedicated Claude tab shows its fixed keys and links to shared Other apps settings. See [CLAUDE.md](docs/CLAUDE.md).
 
-[Download the alpha.7 pre-release](https://github.com/quantqingzhou/Xiaomi-remoter-pro2---for-Ubuntu-Codex-vibe-coding/releases/tag/v0.1.0-alpha.7). To enable mouse navigation, expand the mouse controls in the settings window, identify the Home button, enable the feature, and save. The optional WeChat profile must already be enabled. Legacy configurations keep mouse navigation disabled.
+In normal mode, OK sends Enter while GNOME explicitly reports that its Activities overview is open. This fixes confirmations being skipped when overview focus appeared as an unknown application. Once closed, the existing application mapping applies again. This uses a read-only `gdbus` query; failures do not grant extra Enter behavior. The user has verified global mouse operation, the existing Claude controls, and repeated overview selection on this machine.
 
-Hold Home for about 0.6 seconds to enter or exit mouse mode. A short Home press retains its configured action (for example Super), dispatched on release. In mouse mode, directions move the pointer with acceleration; OK clicks on a short release or right-clicks after a long hold; volume buttons scroll. Back sends Esc in Codex and retains the configured WeChat action (Backspace by default, including hold-to-repeat). TV and Power retain their application mappings, including WeChat Alt+A screenshots.
+## Optional global mouse navigation (alpha.8)
 
-Click the input field and exit mouse mode before dictating or sending. Voice is suppressed in mouse mode with an on-screen reminder. Dragging and screenshot rectangle selection are not included yet. Unrecognized application windows end mouse mode; native Wayland focus detection is not supported. Release direction or scroll buttons after 10 seconds before continuing.
+[Download the alpha.8 pre-release](https://github.com/quantqingzhou/Xiaomi-remoter-pro2---for-Ubuntu-Codex-vibe-coding/releases/tag/v0.1.0-alpha.8). To enable mouse navigation, expand the mouse controls in the settings window, identify the Home button, enable the feature, and save. Mouse navigation works in all applications, including Claude. Legacy configurations keep mouse navigation disabled.
 
-A small persistent, click-through indicator shows mouse mode without stealing focus. It requires XWayland, `python3-gi`, `python3-cairo`, and `gir1.2-gtk-3.0` (the settings window still uses GTK 4). No desktop-sharing portal or audio configuration changes are involved. Switching apps, disconnecting, detecting buttons, or changing configuration cancels mouse operations. Movement and scroll speed are adjustable in five steps. See the [Chinese guide](docs/MOUSE_NAVIGATION.md) for details.
+Hold Home for about 0.6 seconds to enter or exit mouse mode. A short Home press retains its configured action (for example Super), dispatched on release. In mouse mode, directions move the pointer with acceleration; OK clicks on a short release or right-clicks after a long hold; volume buttons scroll. Back retains the configured WeChat action (Backspace by default), sends Backspace in a recognized Claude window, and sends Esc elsewhere. Backspace supports hold-to-repeat. TV and Power retain their application mappings, including WeChat Alt+A screenshots.
+
+Click the input field and exit mouse mode before dictating or sending. Voice is suppressed in mouse mode with an on-screen reminder. Dragging and screenshot rectangle selection are not included yet. Mouse mode persists across application switches and works without recognizing each application. Native Wayland app-specific dictation and Backspace detection remain unsupported. Release direction or scroll buttons after 10 seconds before continuing.
+
+A small persistent, click-through indicator shows mouse mode without stealing focus. It requires XWayland, `python3-gi`, `python3-cairo`, and `gir1.2-gtk-3.0` (the settings window still uses GTK 4). No desktop-sharing portal or audio configuration changes are involved. Switching recognized application categories stops pending movement, scrolling, deletion, and clicks but keeps mouse mode active. Disconnecting, detecting buttons, or changing configuration exits the mode. Movement and scroll speed are adjustable in five steps. See the [Chinese guide](docs/MOUSE_NAVIGATION.md) for details.
 
 ## Installation
 
@@ -132,10 +136,11 @@ Open **小米遥控器按键设置** from the application menu, or run from the 
 /usr/bin/python3 -B scripts/settings.py
 ```
 
-- Select **Codex**, **微信** (WeChat), or **其他软件** (Other apps) at the top of the right panel.
-- In alpha.7, **查看按键模式** previews **普通模式** (Normal) or **鼠标模式** (Mouse); labels beside the product image show each button's configured action. This only changes the preview. It does not activate mouse mode or save settings. Other apps have normal mode only.
+- Select **Codex**, **微信** (WeChat), **Claude**, or **其他软件** (Other apps) at the top of the right panel.
+- **查看按键模式** previews **普通模式** (Normal) or **鼠标模式** (Mouse); labels beside the product image show each button's configured action. This only changes the preview. It does not activate mouse mode or save settings. All four tabs can preview global mouse mode.
 - **固定操作** marks fixed mouse actions and hides shortcut editing. **与普通模式共用设置** marks shared mappings: changing WeChat Back or TV here also changes its normal-mode action. Home shows its short action and long mode toggle separately; only the short action is editable. Offline text buttons show the same information.
-- **当前：…** below Bluetooth reports the actual backend mode, paused state, or unknown status. Bringing settings to the foreground ends mouse mode, so an actual Normal status while previewing Mouse is expected. Draft labels update immediately; runtime mappings change only after saving and bridge confirmation.
+- **当前：…** below Bluetooth reports the actual backend mode, paused state, or unknown status. In alpha.8, opening settings keeps global mouse mode active. Starting button detection still exits it. Draft labels update immediately; runtime mappings change only after saving and bridge confirmation.
+- The Claude tab displays Ctrl+D dictation, Enter send and Backspace as fixed controls after Claude integration is enabled. Other keys show the current shared Other apps mapping; **编辑“其他软件”的共用设置** takes you there to edit. The window shows its version below the product name.
 - Click a button in the remote product image and choose an action. **自定义组合键** selects a custom shortcut; **录入键盘快捷键** captures one in this window.
 - To make the Home button open GNOME Activities, select the **Super** preset rather than physically pressing Super during shortcut capture. It emits one press/release, without repeating. Configure each application profile if you want it everywhere. Other desktops may assign a different action to Super.
 - **待识别** means the physical button needs binding. Click **识别…键**, press that remote button, then **保存设置** (Save). Unbound custom actions cannot be saved.

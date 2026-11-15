@@ -1,9 +1,11 @@
 # SPDX-License-Identifier: GPL-3.0-only
 """按键界面的说明模型；只读取配置和状态，绝不触发输入或切换运行模式。"""
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from keymap_config import EXTRA_BUTTONS, PROFILES, navigation_options
 
 MODES = {'normal': '普通模式', 'mouse': '鼠标模式'}
+VIEW_PROFILES = {'codex': 'Codex', 'wechat': '微信', 'claude': 'Claude', 'other': '其他软件'}
+OVERVIEW_HINT = '普通模式下，GNOME 活动概览打开时，确认键执行 Enter 选择窗口；关闭后恢复原映射。'
 SHORT_NAMES = {'Backspace': '退格', 'Enter': '发送', 'Escape': 'Esc / 取消',
     'Up': '↑', 'Down': '↓', 'Left': '←', 'Right': '→', 'PageUp': '向上翻页',
     'PageDown': '向下翻页', 'Delete': '删除', 'Home': '行首', 'End': '行尾',
@@ -23,8 +25,24 @@ class ButtonView:
 
 
 def button_view(data, profile, mode, button):
+    if profile == 'claude':
+        # 界面不创建第四组存储配置：必须准确呈现已验收的固定键和共用键。
+        if button == 'back':
+            return ButtonView('退格', '退格 · Backspace',
+                'Claude 接入启用后，在输入框中长按连续删除、松手停止；普通和鼠标模式均可使用。', False, True)
+        if mode != 'mouse' and button == 'voice':
+            return ButtonView('按住听写', '按住听写 · Ctrl + D',
+                'Claude 接入启用后，按住开始录音、松开停止并转写。先点击消息输入框；快捷键须在当前客户端验证可用。', False, True)
+        if mode != 'mouse' and button == 'confirm':
+            return ButtonView('发送', '发送 · Enter',
+                'Claude 接入启用后，在消息输入框确认文字并发送；听写未结束时不发送。' + OVERVIEW_HINT, False, True)
+        inherited = button_view(data, 'other', mode, button)
+        if inherited.fixed:
+            return inherited
+        return replace(inherited, editable=False,
+            detail=inherited.detail + ' 此键沿用“其他软件”配置，可点击下方入口编辑共用设置。')
     supported = profile in ('codex', 'wechat')
-    mouse = mode == 'mouse' and supported
+    mouse = mode == 'mouse'
     if mouse:
         direction = {'up': '向上', 'down': '向下', 'left': '向左', 'right': '向右'}
         if button in direction:
@@ -38,9 +56,10 @@ def button_view(data, profile, mode, button):
             text = '向上' if button == 'volume_up' else '向下'
             return ButtonView(text + '滚动', text + '滚动',
                 '滚动鼠标光标所在区域，长按连续滚动。此模式下不调节系统音量。', False, True)
-        if button == 'back' and profile == 'codex':
+        if button == 'back' and profile != 'wechat':
             return ButtonView('Esc / 取消', '取消 / Esc',
-                '关闭菜单或取消当前操作；长按主页键退出鼠标模式。', False, True)
+                '关闭菜单或取消当前操作；长按主页键退出鼠标模式。'
+                + (' 已启用 Claude 接入的窗口例外：返回键为退格。' if profile == 'other' else ''), False, True)
         if button == 'voice':
             return ButtonView('退出后听写', '先退出鼠标模式，再听写',
                 '点击输入框，长按主页键退出鼠标模式，再按住语音键说话。此模式按语音键只显示提示。', False, True)
@@ -72,12 +91,16 @@ def button_view(data, profile, mode, button):
     edit_label = '按下时执行（两种模式共用）' if mouse else '按下时执行'
     if mouse:
         detail += ' 此键沿用普通模式的设置。'
-    if button == 'home' and supported and (mouse or navigation_options(data)['enabled']):
+    if button == 'home' and (mouse or navigation_options(data)['enabled']):
         destination = '退出鼠标模式' if mouse else '进入鼠标模式'
         title = '短按：' + short + '\n长按：' + destination
         short += '\n长按' + ('退出' if mouse else '切换')
         detail = '长按约 0.6 秒切换模式，不同时触发短按动作；切换前先松开其他按键。'
         edit_label = '短按时执行（两种模式共用）'
+    if button == 'home':
+        detail += ' 短按设为 Super 可打开 GNOME 活动概览。' + OVERVIEW_HINT
+    elif button == 'confirm' and not mouse:
+        detail += ' ' + OVERVIEW_HINT
     if button in EXTRA_BUTTONS and button not in data['extra_buttons']:
         short = '待识别'
         detail = '先识别这个实体按键并保存，所选动作才可使用。' + detail
@@ -100,6 +123,7 @@ def runtime_mode_status(health, navigation, now, paused=False):
         return 'normal', '当前：普通模式'
     if navigation.get('active') is True and 0 <= now - stamp < 2:
         context = navigation.get('context')
-        if context in ('codex', 'wechat'):
-            return 'mouse', '当前：鼠标模式 · ' + PROFILES[context]
+        labels = {**PROFILES, 'claude': 'Claude'}
+        if context in labels:
+            return 'mouse', '当前：全局鼠标模式 · ' + labels[context]
     return 'unknown', '当前：模式状态待确认'

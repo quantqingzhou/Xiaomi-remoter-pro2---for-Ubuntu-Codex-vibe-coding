@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
-"""持续运行的 uinput 键盘：Codex 使用 F5，可选微信扩展使用右 Alt。"""
+"""持续运行的 uinput 键盘：Codex F5、微信右 Alt、Claude Ctrl+D。"""
 from __future__ import annotations
 import fcntl
 import json
@@ -40,9 +40,24 @@ def focused_window_context():
             return 'codex'
         if any(value in config.wechat_wm_classes for value in classes):
             return 'wechat'
+        if any(value in getattr(config, 'claude_wm_classes', ()) for value in classes):
+            return 'claude'
         return None
     except (OSError, ValueError, subprocess.SubprocessError):
         return None
+
+
+def gnome_overview_active():
+    """只读查询总览状态；无 GNOME、命令缺失或超时均不扩大确认键权限。"""
+    try:
+        result = subprocess.check_output([
+            'gdbus', 'call', '--session', '--dest', 'org.gnome.Shell',
+            '--object-path', '/org/gnome/Shell', '--method',
+            'org.freedesktop.DBus.Properties.Get', 'org.gnome.Shell', 'OverviewActive'
+        ], text=True, timeout=0.3, stderr=subprocess.DEVNULL)
+        return result.strip() == '(<true>,)'
+    except (OSError, subprocess.SubprocessError):
+        return False
 
 
 def focused_window_is_codex():
@@ -105,14 +120,16 @@ class RemoteState:
 
 class KeyRelay:
     def __init__(self, keyboard, focus, remote_pressed, clock=time.monotonic, *, playback_safe=None, mappings=None,
-                 navigation_active=lambda: False):
+                 navigation_active=lambda: False, overview_active=lambda: False):
         self.keyboard, self.focus, self.remote_pressed, self.clock = keyboard, focus, remote_pressed, clock
         # 未明确确认保护有效时，不触发可能压低其他软件声音的客户端听写。
         self.playback_safe = playback_safe if playback_safe is not None else lambda: False
         self.held = False
         self.mappings = mappings
         self.navigation_active = navigation_active
+        self.overview_active = overview_active
         self.held_code = None
+        self.held_codes = ()
         self.held_context = None
         self.deadline = 0.0
         self.release_pending_since = None
@@ -127,19 +144,49 @@ class KeyRelay:
         # 保持与原先提供布尔值的 Codex 焦点回调兼容。
         if value is True:
             return 'codex'
-        return value if isinstance(value, str) and value in {'codex', 'wechat'} else None
+        return value if isinstance(value, str) and value in {'codex', 'wechat', 'claude'} else None
 
     def _held_key_name(self):
+        if self.held_context == 'claude':
+            return 'Ctrl+D'
         return 'F5' if self.held_code == evdev.ecodes.KEY_F5 else '右 Alt'
+
+    def _press_voice(self, codes):
+        pressed = []
+        try:
+            for code in codes:
+                pressed.append(code)
+                self.key(code, True)
+        except Exception:
+            for code in reversed(pressed):
+                try:
+                    self.key(code, False)
+                except Exception:
+                    pass
+            raise
+        self.held_codes = codes
+
+    def _release_voice(self):
+        error = None
+        for code in reversed(self.held_codes or (self.held_code,)):
+            try:
+                self.key(code, False)
+            except Exception as exc:
+                error = error or exc
+        self.held_codes = ()
+        if error:
+            raise error
 
     def release(self):
         self.release_pending_since = None
         if self.held:
             name = self._held_key_name()
-            self.key(self.held_code, False)
-            self.held = False
-            self.held_code = None
-            self.held_context = None
+            try:
+                self._release_voice()
+            finally:
+                self.held = False
+                self.held_code = None
+                self.held_context = None
             return f'{name} 已松开'
         return '听写键已处于松开状态'
 
@@ -156,6 +203,17 @@ class KeyRelay:
             if self.held and self.remote_pressed() is True:
                 return '忽略迟到的停止命令：遥控器按键仍按住'
             return self.release()
+        if action in ('start', 'send') and self.overview_active():
+            if action == 'start':
+                self.wait_for_release = True
+                return '跳过听写：系统活动概览正在显示'
+            if self.held or self.wait_for_release:
+                return '跳过确认键：请先松开语音键'
+            try:
+                self.key(evdev.ecodes.KEY_ENTER, True)
+            finally:
+                self.key(evdev.ecodes.KEY_ENTER, False)
+            return '活动概览：Enter 已发送'
         if action == 'start':
             if self.wait_for_release:
                 if self.remote_pressed() is False:
@@ -171,8 +229,10 @@ class KeyRelay:
                 return '跳过听写键：遥控器按键已松开或暂时无法读取'
             if context == 'codex' and not self.playback_safe():
                 return '跳过 F5：客户端播放保护未生效或已被更新覆盖，请先运行诊断并恢复保护'
-            code = evdev.ecodes.KEY_F5 if context == 'codex' else evdev.ecodes.KEY_RIGHTALT
-            self.key(code, True)
+            codes = ((evdev.ecodes.KEY_LEFTCTRL, evdev.ecodes.KEY_D) if context == 'claude' else
+                     (evdev.ecodes.KEY_F5,) if context == 'codex' else (evdev.ecodes.KEY_RIGHTALT,))
+            self._press_voice(codes)
+            code = codes[-1]
             self.held_code, self.held_context = code, context
             self.held, self.deadline = True, self.clock() + MAX_HOLD_SECONDS
             self.release_pending_since = None
@@ -181,7 +241,9 @@ class KeyRelay:
             if self.held or self.wait_for_release:
                 return '跳过确认键：听写键仍按住'
             self.mappings.refresh()
-            codes = self.mappings.codes('confirm', self._focus_context())
+            context = self._focus_context()
+            codes = ((evdev.ecodes.KEY_ENTER,) if context == 'claude'
+                     else self.mappings.codes('confirm', context))
             pressed = []
             try:
                 for code in codes:
@@ -240,7 +302,7 @@ def serve():
                                  product=config.product_id)
             relay = KeyRelay(keyboard, focused_window_context, remote.pressed,
                              playback_safe=lambda: is_protected(Path(config.dictation_helper)), mappings=MappingStore(),
-                             navigation_active=mouse_mode_active)
+                             navigation_active=mouse_mode_active, overview_active=gnome_overview_active)
             running = True
 
             def shutdown(_signum, _frame):
