@@ -20,9 +20,12 @@ from playback_protection import is_protected, protect, restore
 
 NAME = 'xiaomi-codex-remote'
 KEY_SERVICE = 'xiaomi-codex-keys.service'
+STATUS_SERVICE = 'xiaomi-codex-status.service'
 DROPIN = '90-xiaomi-codex.conf'
 RUNTIME_FILES = ['codex-ptt-key.py', 'sayall-reconnect.py', 'contextual_back.py', 'remote_config.py',
-                 'playback_protection.py', 'no_duck_helper.py']
+                 'playback_protection.py', 'no_duck_helper.py', 'status_notifier.py', 'startup_guard.py', 'keymap_config.py',
+                 'mapping_keyboard.py', 'key_detection.py', 'key_settings.py', 'product_photo.py', 'settings_status.py',
+                 'service_controls.py']
 OWNED_FIELDS = ['address', 'voice_engine', 'voice_start_command', 'voice_stop_command', 'trigger_mode']
 
 
@@ -103,6 +106,15 @@ def read_optional(path):
     return path.read_bytes() if path.exists() else None
 
 
+def desktop_quote(value):
+    text = str(value)
+    if any(c in text for c in '\n\r\x00'):
+        raise ValueError('桌面启动项路径不能包含换行符')
+    for char in ['\\', '"', '`', '$']:
+        text = text.replace(char, '\\' + char)
+    return '"' + text.replace('%', '%%') + '"'
+
+
 def read_object(raw):
     data = json.loads(raw) if raw is not None else {}
     if not isinstance(data, dict) or not isinstance(data.get('button_map', {}), dict):
@@ -132,7 +144,9 @@ def build_plan(layout, settings, python=None):
     changed.update(address=settings.remote_address.upper(), voice_engine='custom', trigger_mode='hid',
                    voice_start_command=command('start'), voice_stop_command=command('stop'))
     changed.setdefault('button_map', {})['28'] = {'single': 'command:' + command('send')}
-    environment = 'Environment=' + unit_quote(f'XIAOMI_CODEX_CONFIG={config}')
+    keymap = layout.config / NAME / 'keymap.json'
+    environment = ('Environment=' + unit_quote(f'XIAOMI_CODEX_CONFIG={config}') + '\n'
+                   'Environment=' + unit_quote(f'XIAOMI_KEYMAP_CONFIG={keymap}'))
     exec_line = lambda filename, action: ' '.join([unit_quote(python, True), '-B', unit_quote(app / filename, True), action])
     key_unit = f'''[Unit]
 Description=用于 Codex 的小米遥控器虚拟键盘
@@ -147,6 +161,23 @@ Restart=on-failure
 RestartSec=1
 UMask=0077
 '''
+    status_unit = f'''[Unit]
+Description=小米遥控器状态与故障提示
+After=graphical-session-pre.target
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+{environment}
+ExecStart={exec_line('status_notifier.py', '').rstrip()}
+Restart=on-failure
+RestartSec=10
+NoNewPrivileges=true
+UMask=0077
+
+[Install]
+WantedBy=graphical-session.target
+'''
     dropin = f'''[Unit]
 Wants={KEY_SERVICE}
 After={KEY_SERVICE}
@@ -155,6 +186,7 @@ After={KEY_SERVICE}
 {environment}
 ExecStart=
 ExecStart={exec_line('sayall-reconnect.py', 'run')}
+RestartSec=10
 '''
     rule = (f'SUBSYSTEM=="input", KERNEL=="event*", ATTRS{{id/vendor}}=="{settings.vendor_id:04x}", '
             f'ATTRS{{id/product}}=="{settings.product_id:04x}", '
@@ -162,11 +194,21 @@ ExecStart={exec_line('sayall-reconnect.py', 'run')}
     files = {app / name: (REPO / 'src' / name).read_bytes() for name in RUNTIME_FILES}
     files.update({config: json_bytes(settings.to_dict()), sayall_config: json_bytes(changed),
                   units / KEY_SERVICE: key_unit.encode(),
+                  units / STATUS_SERVICE: status_unit.encode(),
                   units / 'sayall-bridge.service.d' / DROPIN: dropin.encode(),
                   layout.config / NAME / '70-xiaomi-codex-remote.rules': rule.encode(),
                   layout.config / NAME / '60-xiaomi-codex-uinput.rules':
                       b'KERNEL=="uinput", SUBSYSTEM=="misc", TAG+="uaccess", OPTIONS+="static_node=uinput"\n',
                   layout.config / NAME / 'xiaomi-codex-uinput.conf': b'uinput\n'})
+    desktop = ('[Desktop Entry]\nType=Application\nName=小米遥控器按键设置\n'
+               'Comment=按应用自定义小米蓝牙遥控器 2 Pro 的按键\n'
+               f'Exec=/usr/bin/env {desktop_quote(f"XIAOMI_CODEX_CONFIG={config}")} '
+               f'{desktop_quote(f"XIAOMI_KEYMAP_CONFIG={keymap}")} '
+               f'{desktop_quote(f"XDG_STATE_HOME={layout.state}")} '
+               f'{desktop_quote(python)} -B {desktop_quote(app / "key_settings.py")}\n'
+               'Icon=xiaomi-codex-remote\nTerminal=false\nCategories=Settings;Utility;\n')
+    files[layout.data / 'applications/xiaomi-codex-key-settings.desktop'] = desktop.encode()
+    files[layout.data / 'icons/hicolor/scalable/apps/xiaomi-codex-remote.svg'] = (REPO / 'src/assets/app-icon.svg').read_bytes()
     for path in files:
         if path != sayall_config and read_optional(path) is not None:
             raise ValueError(f'目标位置已有未受本程序管理的文件，已停止以避免覆盖：{path}')
@@ -252,8 +294,10 @@ def uninstall_plan(layout):
     changes = {}
     for name, entry in manifest['files'].items():
         path = Path(name)
-        if not path.is_absolute() or not any(path.resolve().is_relative_to(root.resolve()) for root in [layout.data / NAME, layout.config / NAME,
-                   layout.config / 'systemd/user', layout.config / 'sayall-linux']):
+        desktop = layout.data / 'applications/xiaomi-codex-key-settings.desktop'
+        icon = layout.data / 'icons/hicolor/scalable/apps/xiaomi-codex-remote.svg'
+        if not path.is_absolute() or not (path in (desktop, icon) or any(path.resolve().is_relative_to(root.resolve()) for root in [layout.data / NAME, layout.config / NAME,
+                   layout.config / 'systemd/user', layout.config / 'sayall-linux'])):
             raise ValueError(f'安装清单中的路径超出管理范围：{path}')
         current = read_optional(path)
         before = base64.b64decode(entry['before']) if entry['before'] is not None else None
@@ -292,7 +336,7 @@ def apply_uninstall(layout, changes):
 
 
 def require_stopped():
-    for unit in ['sayall-bridge.service', KEY_SERVICE]:
+    for unit in ['sayall-bridge.service', KEY_SERVICE, STATUS_SERVICE]:
         result = subprocess.run(['systemctl', '--user', 'is-active', unit], capture_output=True, text=True)
         if result.returncode == 0 or result.stdout.strip() in {'activating', 'deactivating', 'reloading'}:
             raise ValueError(f'应用更改前，请先停止 {unit}')

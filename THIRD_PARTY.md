@@ -5,6 +5,7 @@
 - **Bleak**：<https://github.com/hbldh/bleak>。SayAll 使用的蓝牙依赖。
 - **Fcitx5 Vinput**：<https://github.com/xifan2333/fcitx5-vinput>。仅微信可选扩展需要，由用户自行安装并配置识别后端；本仓库不附带其程序、模型、服务凭据或用户配置。
 - **BlueZ**、**PipeWire**、**WirePlumber**、systemd 及 X11 `xprop` 是单独安装的系统依赖，各自继续遵循原有许可证。
+- **小米官网产品图**：设置窗口从小米官网按需获取该型号的正面图并保存在本机缓存，开源包不附带图片文件。图片及商标不属于本项目的 GPL 授权范围，见 [来源与加载说明](docs/PRODUCT_IMAGE.md)。
 
 本仓库的集成代码采用 **GPL-3.0-only**，完整文本见 [LICENSE](LICENSE)。许可证及 Free Software Foundation 的版权声明保留英文原文，避免将中文说明误当成改写后的法律条款。本项目的许可证不会替代各项依赖自身的许可证。
 

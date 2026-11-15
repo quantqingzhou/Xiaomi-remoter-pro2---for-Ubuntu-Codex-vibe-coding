@@ -15,6 +15,7 @@ import time
 import evdev
 from remote_config import load_config, normalize_address
 from playback_protection import is_protected
+from keymap_config import MappingStore, OUTPUT_CODES
 
 RELEASE_GRACE_SECONDS = 1.5
 MAX_HOLD_SECONDS = 90
@@ -102,15 +103,17 @@ class RemoteState:
 
 
 class KeyRelay:
-    def __init__(self, keyboard, focus, remote_pressed, clock=time.monotonic, *, playback_safe=None):
+    def __init__(self, keyboard, focus, remote_pressed, clock=time.monotonic, *, playback_safe=None, mappings=None):
         self.keyboard, self.focus, self.remote_pressed, self.clock = keyboard, focus, remote_pressed, clock
         # 未明确确认保护有效时，不触发可能压低其他软件声音的客户端听写。
         self.playback_safe = playback_safe if playback_safe is not None else lambda: False
         self.held = False
+        self.mappings = mappings
         self.held_code = None
         self.held_context = None
         self.deadline = 0.0
         self.release_pending_since = None
+        self.wait_for_release = False
 
     def key(self, code, down):
         self.keyboard.write(evdev.ecodes.EV_KEY, code, int(down))
@@ -141,10 +144,16 @@ class KeyRelay:
         # 客户端时间戳反映子进程调度时间，不能代表 HID 事件的先后顺序。
         # 根据物理按键状态判断是否忽略迟到的开始或停止命令。
         if action == 'stop':
+            if self.remote_pressed() is False:
+                self.wait_for_release = False
             if self.held and self.remote_pressed() is True:
                 return '忽略迟到的停止命令：遥控器按键仍按住'
             return self.release()
         if action == 'start':
+            if self.wait_for_release:
+                if self.remote_pressed() is False:
+                    self.wait_for_release = False
+                return '请先松开遥控器语音键，再开始下一次听写'
             if self.held:
                 return f'{self._held_key_name()} 已处于按住状态'
             context = self._focus_context()
@@ -161,8 +170,22 @@ class KeyRelay:
             self.held, self.deadline = True, self.clock() + MAX_HOLD_SECONDS
             self.release_pending_since = None
             return f'{self._held_key_name()} 已按下'
+        if action == 'send' and self.mappings is not None:
+            if self.held or self.wait_for_release:
+                return '跳过确认键：听写键仍按住'
+            self.mappings.refresh()
+            codes = self.mappings.codes('confirm', self._focus_context())
+            pressed = []
+            try:
+                for code in codes:
+                    self.key(code, True)
+                    pressed.append(code)
+            finally:
+                for code in reversed(pressed):
+                    self.key(code, False)
+            return '确认键动作已发送' if codes else '当前应用未启用确认键动作'
         if action == 'send':
-            if self.held:
+            if self.held or self.wait_for_release:
                 return '跳过 Enter：听写键仍按住'
             if self._focus_context() is None:
                 return '跳过 Enter：当前窗口未启用遥控器发送'
@@ -174,7 +197,12 @@ class KeyRelay:
     def watchdog(self):
         if not self.held:
             self.release_pending_since = None
+            if self.wait_for_release and self.remote_pressed() is False:
+                self.wait_for_release = False
             return None
+        if self._focus_context() != self.held_context:
+            self.wait_for_release = True
+            return self.release() + '（已切换应用，请松开语音键后再录音）'
         if self.held_context == 'codex' and not self.playback_safe():
             return self.release() + '（客户端播放保护失效，已停止触发听写）'
         now = self.clock()
@@ -196,12 +224,12 @@ def serve():
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         # SayAll 会排除此设备名称；不要将虚拟键盘标识伪装成小米设备。
         with evdev.UInput({evdev.ecodes.EV_KEY: [evdev.ecodes.KEY_F5, evdev.ecodes.KEY_ENTER,
-                                               evdev.ecodes.KEY_RIGHTALT]},
+                                               evdev.ecodes.KEY_RIGHTALT] + OUTPUT_CODES},
                           name='SayAll Codex Keys', vendor=1, product=1, version=1) as keyboard:
             remote = RemoteState(address=config.remote_address, vendor=config.vendor_id,
                                  product=config.product_id)
             relay = KeyRelay(keyboard, focused_window_context, remote.pressed,
-                             playback_safe=lambda: is_protected(Path(config.dictation_helper)))
+                             playback_safe=lambda: is_protected(Path(config.dictation_helper)), mappings=MappingStore())
             running = True
 
             def shutdown(_signum, _frame):

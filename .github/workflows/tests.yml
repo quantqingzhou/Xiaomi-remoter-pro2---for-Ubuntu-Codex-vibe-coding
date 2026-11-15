@@ -1,4 +1,4 @@
-name: 自动测试
+name: 自动测试与发布
 on: [push, pull_request]
 permissions:
   contents: read
@@ -15,3 +15,50 @@ jobs:
           sudo apt-get install -y python3-evdev python3-bleak
       - name: 运行单元测试和隔离安装测试
         run: /usr/bin/python3 -B -m unittest discover -s tests -v
+  release:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: unit
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    concurrency:
+      group: source-release
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      - name: 仅在版本号变化时发布
+        id: version
+        run: |
+          python3 - <<'PY'
+          import os, re, subprocess
+          from pathlib import Path
+          version = Path('VERSION').read_text().strip()
+          assert re.fullmatch(r'\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?', version)
+          previous = subprocess.run(['git', 'show', 'HEAD^:VERSION'], capture_output=True, text=True)
+          changed = previous.returncode != 0 or previous.stdout.strip() != version
+          if changed:
+              assert Path(f'docs/releases/{version}.md').is_file(), '缺少本版本发布说明'
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              print(f'version={version}', file=output)
+              print(f'changed={str(changed).lower()}', file=output)
+          PY
+      - name: 生成源码包与校验文件
+        if: steps.version.outputs.changed == 'true'
+        run: python3 -B scripts/package.py --output dist
+      - name: 发布实验版本及下载文件
+        if: steps.version.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          gh release create "v$RELEASE_VERSION" \
+            "dist/xiaomi-codex-remote-$RELEASE_VERSION.tar.gz" \
+            "dist/xiaomi-codex-remote-$RELEASE_VERSION.zip" \
+            "dist/xiaomi-codex-remote-$RELEASE_VERSION.sha256" \
+            --target "$GITHUB_SHA" --prerelease --latest=false \
+            --title "小米蓝牙遥控器 2 Pro · Linux Codex · $RELEASE_VERSION" \
+            --notes-file "docs/releases/$RELEASE_VERSION.md"

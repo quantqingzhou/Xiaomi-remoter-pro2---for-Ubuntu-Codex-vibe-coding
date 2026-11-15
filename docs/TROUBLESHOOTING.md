@@ -6,6 +6,8 @@
 journalctl --user -u sayall-bridge -u xiaomi-codex-keys -n 80
 ```
 
+若使用待发布的[状态通知功能](NOTIFICATIONS.md)，可另查 `journalctl --user -u xiaomi-codex-status.service -n 30`。通知只报告基础状态；没有弹窗或显示已恢复，均不能代替实际波形和转写测试。主动维护桥接前可先暂停通知服务。
+
 ## 没有 SayAll Mic
 
 确认 SayAll 已安装、蓝牙服务正常、所选遥控器已连接，并且 `sayall-bridge.service` 正在运行。停止桥接后虚拟麦克风消失是预期行为。检查 `pw-cat`、`pw-loopback`、`pw-dump`、`wpctl` 是否存在。
@@ -60,6 +62,12 @@ journalctl --user -u sayall-bridge -u xiaomi-codex-keys -n 80
 检查 `sayall-bridge.service` 是否通过本项目包装器启动、是否出现重新订阅 ATVV 的日志。包装器依赖 SayAll 0.3.0 的 Python 接口；更换上游版本后需要重新验证。
 
 BLE 失联时日志中的“遥控器 BLE 连接已断开，需要重建音频订阅”是触发 systemd 重建连接的信号。等待服务重新就绪再测试。如果持续失败，先确认地址、电量和蓝牙连接，而不是反复修改 F5 映射。
+
+## 开机后蓝牙已连接，但没有按键设备
+
+蓝牙显示已连接不等于 HID 输入节点已可用。本机曾出现此情况，旧桥接会反复创建麦克风再因输入缺失退出。待发布版本增加[启动检查与有限重连](RECONNECT.md)：先等待节点和权限，符合条件时只重建指定遥控器连接，限制尝试频率。
+
+日志中若提示等待音频、权限、配对或身份信息，应解决对应项目；不会对此直接断开蓝牙。systemd 显示 `active` 可能只是包装器仍在等待，不能代替实际音频订阅、输入接管和听写测试。当前自动措施无法保证修复所有 BlueZ 或内核故障，也不会自动重置整个蓝牙适配器。
 
 ## 安装或卸载拒绝覆盖
 

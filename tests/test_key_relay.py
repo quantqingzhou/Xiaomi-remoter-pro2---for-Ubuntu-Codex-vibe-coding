@@ -117,6 +117,25 @@ class Keyboard:
 
 
 class RelayTests(unittest.TestCase):
+    def test_focus_change_releases_voice_and_blocks_duplicate_start_until_physical_release(self):
+        self.focus = 'wechat'; self.start()
+        self.focus = 'codex'
+        self.assertIn('切换应用', self.relay.watchdog())
+        self.assertEqual(self.keyboard.events, [(RIGHT_ALT, 1), (RIGHT_ALT, 0)])
+        self.relay.apply('start', 101); self.relay.apply('send', 102)
+        self.assertEqual(len(self.keyboard.events), 2)
+        self.remote = False; self.relay.apply('stop', 103)
+        self.remote = True; self.relay.apply('start', 104)
+        self.assertEqual(self.keyboard.events[-1], (F5, 1))
+
+    def test_missing_stop_command_after_focus_change_unblocks_on_observed_release(self):
+        self.start(); self.focus = None
+        self.relay.watchdog()
+        self.remote = None; self.relay.watchdog()
+        self.assertTrue(self.relay.wait_for_release)
+        self.remote = False; self.relay.watchdog()
+        self.assertFalse(self.relay.wait_for_release)
+
     def setUp(self):
         self.keyboard = Keyboard()
         self.focus = True

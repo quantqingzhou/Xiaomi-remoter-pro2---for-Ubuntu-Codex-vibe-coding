@@ -15,6 +15,27 @@ spec.loader.exec_module(m)
 
 
 class ReconnectTests(unittest.IsolatedAsyncioTestCase):
+    async def test_persistent_hid_loss_exits_even_if_ble_is_connected(self):
+        bridge = SimpleNamespace(client=SimpleNamespace(is_connected=True), hid=SimpleNamespace(dev=None))
+        cleaned = asyncio.Event()
+        async def operation():
+            try:
+                await asyncio.Future()
+            finally:
+                cleaned.set()
+        with self.assertRaisesRegex(ConnectionError, 'HID'):
+            await m.run_with_disconnect_guard(bridge, operation(), .001, hid_timeout=.003)
+        self.assertTrue(cleaned.is_set())
+
+    async def test_short_hid_reattach_is_allowed(self):
+        bridge = SimpleNamespace(client=SimpleNamespace(is_connected=True), hid=SimpleNamespace(dev=None))
+        async def operation():
+            await asyncio.sleep(.003)
+            bridge.hid.dev = object()
+            await asyncio.sleep(.01)
+            return 'ready'
+        self.assertEqual(await m.run_with_disconnect_guard(bridge, operation(), .001, hid_timeout=.1), 'ready')
+
     async def test_disconnect_exits_and_cancels_original_run(self):
         bridge = SimpleNamespace(client=SimpleNamespace(is_connected=True))
         cleaned = asyncio.Event()

@@ -17,6 +17,16 @@ from remote_config import Settings, normalize_address
 
 
 class ManagementTests(unittest.TestCase):
+    def test_custom_config_paths_match_between_menu_and_services(self):
+        files, _ = self.plan()
+        keymap = self.layout.config / manage.NAME / 'keymap.json'
+        for path in (self.layout.config / 'systemd/user' / manage.KEY_SERVICE,
+                     self.layout.config / 'systemd/user/sayall-bridge.service.d' / manage.DROPIN):
+            self.assertIn(manage.unit_quote(f'XIAOMI_KEYMAP_CONFIG={keymap}'), files[path].decode())
+        desktop = files[self.layout.data / 'applications/xiaomi-codex-key-settings.desktop'].decode()
+        self.assertIn(manage.desktop_quote(f'XIAOMI_KEYMAP_CONFIG={keymap}'), desktop)
+        self.assertIn(manage.desktop_quote(f'XIAOMI_CODEX_CONFIG={self.layout.config / manage.NAME / "config.json"}'), desktop)
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
@@ -48,9 +58,35 @@ class ManagementTests(unittest.TestCase):
         app = self.layout.data / manage.NAME
         self.assertIn(app / 'playback_protection.py', files)
         self.assertIn(app / 'no_duck_helper.py', files)
+        self.assertIn(app / 'startup_guard.py', files)
+        self.assertIn(app / 'settings_status.py', files)
+        self.assertIn(app / 'service_controls.py', files)
+        self.assertIn(self.layout.data / 'icons/hicolor/scalable/apps/xiaomi-codex-remote.svg', files)
+        dropin = files[self.layout.config / 'systemd/user/sayall-bridge.service.d' / manage.DROPIN].decode()
+        self.assertIn('RestartSec=10', dropin)
         settings = json.loads(files[self.layout.config / manage.NAME / 'config.json'])
         self.assertEqual(settings['dictation_helper'], self.settings.dictation_helper)
         self.assertEqual(settings['wechat_wm_classes'], [])
+
+    def test_notifier_is_separate_from_bridge_and_does_not_start_on_install(self):
+        files, _ = self.plan()
+        app = self.layout.data / manage.NAME
+        self.assertIn(app / 'status_notifier.py', files)
+        unit = files[self.layout.config / 'systemd/user' / manage.STATUS_SERVICE].decode()
+        self.assertIn('WantedBy=graphical-session.target', unit)
+        self.assertIn('PartOf=graphical-session.target', unit)
+        self.assertNotIn('PartOf=sayall-bridge', unit)
+        self.assertNotIn('Requires=', unit)
+        self.assertNotIn('Wants=', unit)
+        self.assertIn('status_notifier.py', unit)
+        self.assertFalse(self.layout.data.exists())
+
+    def test_running_notifier_blocks_install_or_uninstall(self):
+        replies = [type('Reply', (), {'returncode': 3, 'stdout': 'inactive'})()] * 2
+        replies += [type('Reply', (), {'returncode': 0, 'stdout': 'active'})()]
+        with patch.object(manage.subprocess, 'run', side_effect=replies), \
+                self.assertRaisesRegex(ValueError, manage.STATUS_SERVICE):
+            manage.require_stopped()
 
     def test_optional_wechat_cli_is_explicit_and_preview_does_not_write(self):
         args = ['manage.py', 'install', '--address', 'AA:BB:CC:DD:EE:FF',
