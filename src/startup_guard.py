@@ -18,6 +18,62 @@ class Readiness:
     action: str | None = None
 
 
+def attach_released_keyboard(hid, *, clock=time.monotonic, sleep=time.sleep,
+                             timeout=1.0, settle=0.15):
+    """等桌面收到完整的按下/松开后才独占设备，防止开机唤醒键卡住。
+
+    在独占前准备输出设备并清掉已由桌面处理的旧事件；抓取后再次检查
+    实体按键，若恰好又按下则让出设备，交给下一轮重试。
+    """
+    devices = hid.find_keyboard()
+    if not devices:
+        return False
+    device, *unused = devices
+    for other in unused:
+        other.close()
+    grabbed = False
+    attached = False
+    try:
+        hid._ensure_uinput(device)
+        deadline = clock() + timeout
+        idle_since = None
+        while hid.running and clock() < deadline:
+            try:
+                # read() 非阻塞；旧事件不能在独占后重放成新的听写。
+                buffered = list(device.read())
+            except BlockingIOError:
+                buffered = []
+            now = clock()
+            if device.active_keys() or buffered:
+                idle_since = None
+            elif idle_since is None:
+                idle_since = now
+            elif now - idle_since >= settle:
+                device.grab()
+                grabbed = True
+                if device.active_keys():
+                    return False
+                hid.dev = device
+                attached = True
+                hid.log(f'按键已松开，已接管遥控器键盘: {device.path} ({device.name})')
+                return True
+            sleep(0.02)
+        if hid.running:
+            hid.log('等待遥控器按键松开后再接管键盘')
+        return False
+    except (OSError, SystemError) as exc:
+        hid.log(f'遥控器键盘暂不可接管，等待重试: {exc}')
+        return False
+    finally:
+        if not attached:
+            if grabbed:
+                try:
+                    device.ungrab()
+                except (OSError, SystemError):
+                    pass
+            device.close()
+
+
 async def command(*args, timeout=4):
     """有超时、可取消的独立命令，不调用 shell，也不保留原始设备信息。"""
     process = None

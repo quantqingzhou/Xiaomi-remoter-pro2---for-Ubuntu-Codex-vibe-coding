@@ -48,6 +48,10 @@ def contextual_remote_hid(base_hid, focus, config=None, mappings=None):
     from key_detection import EventDevice
 
     class ContextualRemoteHid(base_hid):
+        def _attach(self):
+            from startup_guard import attach_released_keyboard
+            return attach_released_keyboard(self)
+
         def _read_events(self):
             if mappings is None:
                 return super()._read_events()

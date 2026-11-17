@@ -4,7 +4,7 @@
 
 **Designed for Linux users of the Codex desktop client.** Use a Xiaomi Bluetooth Remote 2 Pro for voice coding: hold its voice button to dictate, release to finish, and press the center button to send.
 
-**0.1.0-alpha.8 — pre-release.** The settings window and desktop notifications currently use Chinese. This README provides English setup and operation instructions.
+**0.1.0-alpha.9 — pre-release.** The settings window and desktop notifications currently use Chinese. This README provides English setup and operation instructions.
 
 Built on [SayAll for Linux](https://github.com/ZXC011/sayall-linux), this project adds application-specific keys, playback protection, reconnect checks, a visual key editor, and status diagnostics. Codex dictation uses the client's existing speech recognition; this project does not install a local speech recognition model. It is an independent community project, not an official Xiaomi or OpenAI product.
 
@@ -13,6 +13,8 @@ Built on [SayAll for Linux](https://github.com/ZXC011/sayall-linux), this projec
 Hardware testing has used the **Xiaomi Bluetooth Remote 2 Pro**, device model `RC003`, VID `2717`, PID `32b8`, with Ubuntu 26.04, GNOME Wayland, PipeWire/WirePlumber, and SayAll **0.3.0**. Application detection uses `xprop` and exact `WM_CLASS` matches through XWayland. Native Wayland windows, other desktops and other remote models are not yet verified.
 
 The prototype has passed real dictation, release-to-stop, center-button send, Bluetooth reconnect, and reboot checks. The generic installer has been tested in isolated directories, **not on a second clean computer**. Automated tests do not establish hardware compatibility or successful cloud transcription.
+
+**alpha.9 fixes startup key capture**: it waits for all remote keys to be released before exclusively grabbing the device, discards old events, and retries if another press races with the grab. This prevents a wake-up F5 press from reaching the desktop while its release is intercepted. The user verified WeChat → Codex → WeChat dictation without unintended recording or stuck holds, and reported completing a reboot on 2026-11-17 before approving publication. See the bilingual [release notes](docs/releases/0.1.0-alpha.9.md).
 
 ## Default controls
 
@@ -31,7 +33,7 @@ In normal mode, OK sends Enter while GNOME explicitly reports that its Activitie
 
 ## Optional global mouse navigation (alpha.8)
 
-[Download the alpha.8 pre-release](https://github.com/quantqingzhou/Xiaomi-remoter-pro2---for-Ubuntu-Codex-vibe-coding/releases/tag/v0.1.0-alpha.8). To enable mouse navigation, expand the mouse controls in the settings window, identify the Home button, enable the feature, and save. Mouse navigation works in all applications, including Claude. Legacy configurations keep mouse navigation disabled.
+[Download the alpha.9 pre-release](https://github.com/quantqingzhou/Xiaomi-remoter-pro2---for-Ubuntu-Codex-vibe-coding/releases/tag/v0.1.0-alpha.9). To enable mouse navigation, expand the mouse controls in the settings window, identify the Home button, enable the feature, and save. Mouse navigation works in all applications, including Claude. Legacy configurations keep mouse navigation disabled.
 
 Hold Home for about 0.6 seconds to enter or exit mouse mode. A short Home press retains its configured action (for example Super), dispatched on release. In mouse mode, directions move the pointer with acceleration; OK clicks on a short release or right-clicks after a long hold; volume buttons scroll. Back retains the configured WeChat action (Backspace by default), sends Backspace in a recognized Claude window, and sends Esc elsewhere. Backspace supports hold-to-repeat. TV and Power retain their application mappings, including WeChat Alt+A screenshots.
 
