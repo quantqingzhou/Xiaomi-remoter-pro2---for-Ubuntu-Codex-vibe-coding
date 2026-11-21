@@ -399,12 +399,19 @@ def main():
             heading_row.append(titles)
             connection = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5,
                                  valign=Gtk.Align.CENTER, halign=Gtk.Align.END)
+            device_badges = Gtk.Box(spacing=8, halign=Gtk.Align.END)
             self.bluetooth = Gtk.Button(label='蓝牙：检查中…')
             self.bluetooth.add_css_class('status-badge')
             self.bluetooth.add_css_class('unknown')
             self.bluetooth.set_tooltip_text('查看设备状态与日志')
             self.bluetooth.connect('clicked', self.open_status)
-            connection.append(self.bluetooth)
+            device_badges.append(self.bluetooth)
+            self.battery = Gtk.Label(label='电量：检查中…')
+            self.battery.add_css_class('status-badge')
+            self.battery.add_css_class('unknown')
+            self.battery.set_tooltip_text('遥控器上报的剩余电量；读数可能延迟更新。')
+            device_badges.append(self.battery)
+            connection.append(device_badges)
             self.runtime_badge = Gtk.Label(label='当前：运行状态待确认')
             self.runtime_badge.add_css_class('runtime-mode')
             self.runtime_badge.set_tooltip_text('来自后台的实际运行状态；查看模式不会切换遥控器。鼠标模式在切换应用后保持，长按主页键退出。')
@@ -797,6 +804,15 @@ def main():
                 self.bluetooth.set_label('●  蓝牙：' + text if level == 'ok' else '○  蓝牙：' + text)
                 for name in ('warning', 'unknown'):
                     (self.bluetooth.add_css_class if level == name else self.bluetooth.remove_css_class)(name)
+                battery_level, battery_text = snapshot['items'].get('battery', ('unknown', '电量未知'))
+                percentage = snapshot.get('battery_percent')
+                valid_battery = type(percentage) is int and 0 <= percentage <= 100
+                self.battery.set_label(f'电量：{percentage}%' if valid_battery else '电量：未知')
+                if not valid_battery:
+                    battery_level = 'unknown'
+                self.battery.set_tooltip_text(battery_text + '。遥控器上报的读数可能延迟更新。')
+                for name in ('warning', 'unknown'):
+                    (self.battery.add_css_class if battery_level == name else self.battery.remove_css_class)(name)
                 self.updating_controls = True
                 autostart = snapshot.get('autostart')
                 if type(autostart) is bool:

@@ -4,7 +4,7 @@
 
 **Designed for Linux users of the Codex desktop client.** Use a Xiaomi Bluetooth Remote 2 Pro for voice coding: hold its voice button to dictate, release to finish, and press the center button to send.
 
-**0.1.0-alpha.9 — pre-release.** The settings window and desktop notifications currently use Chinese. This README provides English setup and operation instructions.
+**0.1.0-alpha.10 — pre-release.** The settings window and desktop notifications currently use Chinese. This README provides English setup and operation instructions.
 
 Built on [SayAll for Linux](https://github.com/ZXC011/sayall-linux), this project adds application-specific keys, playback protection, reconnect checks, a visual key editor, and status diagnostics. Codex dictation uses the client's existing speech recognition; this project does not install a local speech recognition model. It is an independent community project, not an official Xiaomi or OpenAI product.
 
@@ -33,7 +33,7 @@ In normal mode, OK sends Enter while GNOME explicitly reports that its Activitie
 
 ## Optional global mouse navigation (alpha.8)
 
-[Download the alpha.9 pre-release](https://github.com/quantqingzhou/Xiaomi-remoter-pro2---for-Ubuntu-Codex-vibe-coding/releases/tag/v0.1.0-alpha.9). To enable mouse navigation, expand the mouse controls in the settings window, identify the Home button, enable the feature, and save. Mouse navigation works in all applications, including Claude. Legacy configurations keep mouse navigation disabled.
+[Download the alpha.10 pre-release](https://github.com/quantqingzhou/Xiaomi-remoter-pro2---for-Ubuntu-Codex-vibe-coding/releases/tag/v0.1.0-alpha.10). To enable mouse navigation, expand the mouse controls in the settings window, identify the Home button, enable the feature, and save. Mouse navigation works in all applications, including Claude. Legacy configurations keep mouse navigation disabled.
 
 Hold Home for about 0.6 seconds to enter or exit mouse mode. A short Home press retains its configured action (for example Super), dispatched on release. In mouse mode, directions move the pointer with acceleration; OK clicks on a short release or right-clicks after a long hold; volume buttons scroll. Back retains the configured WeChat action (Backspace by default), sends Backspace in a recognized Claude window, and sends Esc elsewhere. Backspace supports hold-to-repeat. TV and Power retain their application mappings, including WeChat Alt+A screenshots.
 
@@ -151,7 +151,8 @@ Open **小米遥控器按键设置** from the application menu, or run from the 
 - The top-right **×** closes settings and prompts if there are unsaved edits.
 - On the main page, below shortcut recording, **暂停后台** pauses custom key mappings, the remote microphone and fault notifications; **恢复运行** resumes them. Raw Bluetooth keys may still reach the desktop: pausing does not disable the hardware. **登录后自动启动** controls the next login only; turn it off and also pause to stop the project now and after login. Controls verify the resulting service state and preserve notification preferences across retries. They operate only the project’s user services, without sudo; the user reported no major issues with pause/resume, startup toggling and dictation on the test machine; broader validation remains pending.
 - Saving first reports that the file was written, then confirms that the bridge has read it. Only pending or failed configuration status stays visible. If a configuration is damaged, **更多操作 → 备份损坏配置并恢复默认** backs up the original bytes before restoring defaults, without replacing the previous valid backup.
-- The Bluetooth badge shows connected, disconnected or unknown. Click it or **状态与日志** (Status and logs) to inspect Bluetooth, HID, SayAll, microphone, key service, playback protection and notifications.
+- The Bluetooth badge shows connected, disconnected or unknown. Click it or **状态与日志** (Status and logs) to inspect Bluetooth, battery, HID, SayAll, microphone, key service, playback protection and notifications.
+- alpha.10 adds a battery percentage beside Bluetooth and in Status and logs. It reuses the same read-only device query, refreshed about every eight seconds while the window is open. At 20% or below the indicator uses a low-battery color. Disconnected, unavailable or unreported values show **未知** (unknown), without retaining an old percentage. Device reports may update with a delay; this feature does not wake or reconnect the remote.
 - Logs default to **错误与警告** (Errors and warnings); **全部日志** shows all recent records, and **复制日志** copies them. The viewer reads up to 200 records from the last 24 hours, masking Bluetooth addresses and home-directory usernames. Nothing is uploaded automatically.
 
 The product image is fetched from Xiaomi's official CDN and cached locally on first use. The source package contains no product bitmap. If offline without a cache, a text-button list still allows key configuration. Status queries are read-only and run in the background; a microphone being present does not prove actual speech or transcription is working.

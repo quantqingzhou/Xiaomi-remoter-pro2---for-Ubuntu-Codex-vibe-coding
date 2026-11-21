@@ -10,7 +10,7 @@ import re
 import status_notifier as probes
 from remote_config import load_config, config_path, Settings
 
-ROWS = {'bluetooth': '蓝牙连接', 'hid': '遥控器按键设备', 'bridge': '音频桥接',
+ROWS = {'bluetooth': '蓝牙连接', 'battery': '遥控器电量', 'hid': '遥控器按键设备', 'bridge': '音频桥接',
         'mic': 'SayAll 麦克风', 'keys': '按键服务', 'protection': '听写播放保护',
         'notifications': '桌面故障提示'}
 UNITS = ('xiaomi-codex-status.service', 'sayall-bridge.service',
@@ -22,6 +22,27 @@ def service_active(unit):
     if result is None or result.returncode != 0 or not result.stdout.strip():
         return None
     return result.stdout.strip() == 'active'
+
+
+def bluetooth_details(address):
+    """同一次只读查询取得连接和电量；断线时不使用 BlueZ 缓存的旧电量。"""
+    result = probes.run_readonly('bluetoothctl', 'info', address)
+    if result is None or result.returncode != 0:
+        return None, None
+    match = re.search(r'^\s*Connected:\s*(yes|no)\s*$', result.stdout, re.M)
+    connected = match.group(1) == 'yes' if match else None
+    if connected is not True:
+        return connected, None
+    match = re.search(
+        r'^\s*Battery Percentage:\s*(?:0x([0-9a-f]{1,4})(?:\s+\((\d{1,3})\))?|(\d{1,3}))\s*$',
+        result.stdout, re.M | re.I)
+    if not match:
+        return connected, None
+    hexadecimal, decimal, plain = match.groups()
+    percentage = int(hexadecimal, 16) if hexadecimal is not None else int(plain)
+    if not 0 <= percentage <= 100 or (decimal is not None and int(decimal) != percentage):
+        return connected, None
+    return connected, percentage
 
 
 def panel_config():
@@ -42,14 +63,14 @@ def panel_config():
 
 
 def collect_status():
-    result = {'time': datetime.now().strftime('%H:%M:%S'), 'items': {}}
+    result = {'time': datetime.now().strftime('%H:%M:%S'), 'items': {}, 'battery_percent': None}
     try:
         config, key_socket = panel_config()
     except (OSError, ValueError):
         result['items'] = {key: ('unknown', '未配置，暂无法检查') for key in ROWS}
         return result
     tasks = {
-        'bluetooth': lambda: probes.bluetooth_connected(config.remote_address),
+        'bluetooth': lambda: bluetooth_details(config.remote_address),
         'hid': lambda: probes.hid_available(config),
         'bridge': probes.bridge_active,
         'mic': probes.microphone_state,
@@ -65,6 +86,16 @@ def collect_status():
                 values[key] = future.result()
             except Exception:
                 values[key] = None
+    connected, percentage = values['bluetooth'] or (None, None)
+    values['bluetooth'] = connected
+    if connected is True and type(percentage) is int and 0 <= percentage <= 100:
+        result['battery_percent'] = percentage
+        result['items']['battery'] = (('warning', f'{percentage}% · 电量偏低') if percentage <= 20
+                                      else ('ok', f'{percentage}%'))
+    else:
+        reason = ('未连接，电量未知' if connected is False else
+                  '设备尚未上报电量' if connected is True else '查询失败，电量未知')
+        result['items']['battery'] = ('unknown', reason)
     texts = {'bluetooth': ('已连接', '未连接'), 'hid': ('可用', '未找到可读设备'),
              'bridge': ('运行中', '未运行 / 正在重连'), 'keys': ('已就绪', '未就绪'),
              'notifications': ('已启用', '未运行')}

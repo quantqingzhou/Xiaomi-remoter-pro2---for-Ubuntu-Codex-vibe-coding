@@ -4,17 +4,19 @@
 
 **专为 Linux 版 Codex 用户设计。** 把小米蓝牙遥控器 2 Pro 的麦克风和按键接入 Codex 听写，按住说话、松开转写、按确认键发送，用中文语音完成 vibe coding。项目标识为 `xiaomi-codex-remote`。
 
-**0.1.0-alpha.9 · 预发布版** · [快速开始](docs/QUICKSTART.md) · [按键设置](docs/KEY_SETTINGS.md) · [客户端更新后恢复](docs/CLIENT_UPDATES.md) · [微信可选扩展](docs/WECHAT.md) · [验证范围](docs/TESTING.md) · [故障排查](docs/TROUBLESHOOTING.md)
+**0.1.0-alpha.10 · 预发布版** · [快速开始](docs/QUICKSTART.md) · [按键设置](docs/KEY_SETTINGS.md) · [客户端更新后恢复](docs/CLIENT_UPDATES.md) · [微信可选扩展](docs/WECHAT.md) · [验证范围](docs/TESTING.md) · [故障排查](docs/TROUBLESHOOTING.md)
 
 本项目在 [SayAll for Linux](https://github.com/ZXC011/sayall-linux) 的蓝牙音频桥接基础上，提供持续运行的虚拟键盘、Codex 按键映射和断线恢复。Codex 功能使用客户端已有的听写能力，不安装本地语音识别模型。另提供默认关闭的微信语音输入扩展，需用户自行安装 Fcitx5 Vinput 并配置识别服务，详见[微信安装说明](docs/WECHAT.md)。
 
 完整方案默认要求先停用已核实客户端的听写降音量辅助程序，再安装遥控器桥接。播放保护不生效时，遥控器不会启动 F5 听写；不提供跳过检查继续使用的选项。这样从触发源阻止听写主动压低其他应用的播放音量，而不持续强制改写它们的音量。
 
-本版提供可选的[全局鼠标操作](docs/MOUSE_NAVIGATION.md)：长按主页切换，方向键移动，确认点击，音量键滚动；切换软件保持模式，微信和已启用接入的 Claude 仍可退格。[下载 alpha.9 预发布版](https://github.com/quantqingzhou/Xiaomi-remoter-pro2---for-Ubuntu-Codex-vibe-coding/releases/tag/v0.1.0-alpha.9)。
+本版提供可选的[全局鼠标操作](docs/MOUSE_NAVIGATION.md)：长按主页切换，方向键移动，确认点击，音量键滚动；切换软件保持模式，微信和已启用接入的 Claude 仍可退格。[下载 alpha.10 预发布版](https://github.com/quantqingzhou/Xiaomi-remoter-pro2---for-Ubuntu-Codex-vibe-coding/releases/tag/v0.1.0-alpha.10)。
 
 本版另提供可选的 [Claude 听写、发送与退格](docs/CLAUDE.md)，使用 Claude 自带的 Ctrl+D 听写。三个按键已获本机用户实测确认；本轮全局鼠标、Claude 原有功能和多次 GNOME 总览确认也已获用户实测确认。
 
 alpha.9 修复开机或重连时可能遗留的 F5 连发：等待遥控器所有按键松开后再接管，清理旧事件，并在抓取竞态时退回重试。用户已完成微信与 Codex 交叉测试，并于 2026-11-17 反馈已重启、同意发布。详见[发布说明](docs/releases/0.1.0-alpha.9.md)。
+
+alpha.10 新增遥控器电量显示：首页蓝牙状态旁和“状态与日志”中均可查看，20% 及以下变色提示；未连接或读不到时显示未知。窗口打开时自动刷新，无需更改按键配置。详见[本版发布说明](docs/releases/0.1.0-alpha.10.md)。
 
 ## 按键
 
