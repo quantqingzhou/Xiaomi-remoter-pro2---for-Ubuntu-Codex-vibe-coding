@@ -4,7 +4,7 @@
 
 **Designed for Linux users of the Codex desktop client.** Use a Xiaomi Bluetooth Remote 2 Pro for voice coding: hold its voice button to dictate, release to finish, and press the center button to send.
 
-**0.1.0-alpha.10 — pre-release.** The settings window and desktop notifications currently use Chinese. This README provides English setup and operation instructions.
+**0.1.0-alpha.11 — pre-release.** The settings window and desktop notifications currently use Chinese. This README provides English setup and operation instructions.
 
 Built on [SayAll for Linux](https://github.com/ZXC011/sayall-linux), this project adds application-specific keys, playback protection, reconnect checks, a visual key editor, and status diagnostics. Codex dictation uses the client's existing speech recognition; this project does not install a local speech recognition model. It is an independent community project, not an official Xiaomi or OpenAI product.
 
@@ -33,9 +33,11 @@ In normal mode, OK sends Enter while GNOME explicitly reports that its Activitie
 
 ## Optional global mouse navigation (alpha.8)
 
-[Download the alpha.10 pre-release](https://github.com/quantqingzhou/Xiaomi-remoter-pro2---for-Ubuntu-Codex-vibe-coding/releases/tag/v0.1.0-alpha.10). To enable mouse navigation, expand the mouse controls in the settings window, identify the Home button, enable the feature, and save. Mouse navigation works in all applications, including Claude. Legacy configurations keep mouse navigation disabled.
+[Download the alpha.11 pre-release](https://github.com/quantqingzhou/Xiaomi-remoter-pro2---for-Ubuntu-Codex-vibe-coding/releases/tag/v0.1.0-alpha.11). To enable mouse navigation, expand the mouse controls in the settings window, identify the Home button, enable the feature, and save. Mouse navigation works in all applications, including Claude. Legacy configurations keep mouse navigation disabled.
 
 Hold Home for about 0.6 seconds to enter or exit mouse mode. A short Home press retains its configured action (for example Super), dispatched on release. In mouse mode, directions move the pointer with acceleration; OK clicks on a short release or right-clicks after a long hold; volume buttons scroll. Back retains the configured WeChat action (Backspace by default), sends Backspace in a recognized Claude window, and sends Esc elsewhere. Backspace supports hold-to-repeat. TV and Power retain their application mappings, including WeChat Alt+A screenshots.
+
+**alpha.11 adds a dedicated mouse right-click on Menu.** Identify the physical Menu button in settings and save first. In mouse mode, pressing Menu right-clicks at the pointer; holding it does not repeat the click. Its normal-mode mapping is retained, and long-holding OK still right-clicks. Select **鼠标模式** (Mouse mode) in the settings preview to see **鼠标右键** (Mouse right button) beside Menu. Switching this preview does not activate mouse mode; hold Home to do that. See the [release notes](docs/releases/0.1.0-alpha.11.md).
 
 Click the input field and exit mouse mode before dictating or sending. Voice is suppressed in mouse mode with an on-screen reminder. Dragging and screenshot rectangle selection are not included yet. Mouse mode persists across application switches and works without recognizing each application. Native Wayland app-specific dictation and Backspace detection remain unsupported. Release direction or scroll buttons after 10 seconds before continuing.
 

@@ -12,7 +12,7 @@ from keymap_config import navigation_options
 LONG_PRESS = 0.6
 MAX_MOTION_HOLD = 10.0
 DIRECTIONS = {'left': (-1, 0), 'right': (1, 0), 'up': (0, -1), 'down': (0, 1)}
-MOUSE_BUTTONS = set(DIRECTIONS) | {'confirm', 'back', 'volume_up', 'volume_down', 'voice'}
+MOUSE_BUTTONS = set(DIRECTIONS) | {'confirm', 'menu', 'back', 'volume_up', 'volume_down', 'voice'}
 
 
 def create_mouse():
@@ -163,6 +163,10 @@ class MouseNavigation:
         self.owned[code] = state
         if button in ('volume_up', 'volume_down'):
             self._scroll(button)
+        elif button == 'menu':
+            # 独立右键在按下时完成一对点击；吞掉重复和松开，不触发普通菜单映射。
+            state['done'] = True
+            self._click(E.BTN_RIGHT)
         elif button == 'back':
             self.tap((E.KEY_ESC,))
         elif button == 'voice':

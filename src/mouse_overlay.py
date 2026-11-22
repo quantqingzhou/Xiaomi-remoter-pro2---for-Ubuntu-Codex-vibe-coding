@@ -33,7 +33,7 @@ def main():
     box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
     box.set_border_width(12)
     title = Gtk.Label(label='全局鼠标模式 · 长按主页退出')
-    help_text = Gtk.Label(label='方向键移动 · 确认点击 · 音量键滚动')
+    help_text = Gtk.Label(label='方向键移动 · 确认左击 · 菜单右击 · 音量键滚动')
     box.pack_start(title, False, False, 0)
     box.pack_start(help_text, False, False, 0)
     window.add(box)
@@ -61,7 +61,7 @@ def main():
                 Gtk.main_quit()
                 return False
         elif state.get('active'):
-            text = state.get('hint') or '方向键移动 · 确认点击 · 音量键滚动'
+            text = state.get('hint') or '方向键移动 · 确认左击 · 菜单右击 · 音量键滚动'
             if text != last_text:
                 help_text.set_text(text)
                 last_text = text

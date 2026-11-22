@@ -659,7 +659,7 @@ def main():
                 self.navigation_speeds[field] = picker
                 row.append(picker)
                 mouse_box.append(row)
-            mouse_hint = Gtk.Label(label='长按主页全局切换，短按保留原动作。方向键移动，确认点击／长按右键，音量键滚动。返回键：微信沿用设置，Claude 为退格，其他为 Esc。听写前先点击输入框并退出鼠标模式。', xalign=0, wrap=True)
+            mouse_hint = Gtk.Label(label='长按主页全局切换，短按保留原动作。方向键移动，确认点击，菜单键右击（需先识别）；长按确认也可右击。音量键滚动。返回键：微信沿用设置，Claude 为退格，其他为 Esc。听写前先点击输入框并退出鼠标模式。', xalign=0, wrap=True)
             mouse_hint.set_max_width_chars(26)
             mouse_hint.add_css_class('muted')
             mouse_box.append(mouse_hint)

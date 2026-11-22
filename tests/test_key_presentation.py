@@ -98,6 +98,29 @@ class PresentationTests(unittest.TestCase):
         self.data['navigation']['enabled']=False
         self.assertNotIn('长按',self.view('codex','normal','home').title)
 
+    def test_mouse_menu_is_fixed_right_click_without_erasing_normal_actions(self):
+        self.data['extra_buttons']['menu'] = 139
+        for profile in ('codex', 'wechat', 'other'):
+            self.data['profiles'][profile]['menu'] = 'Ctrl+C'
+        before = copy.deepcopy(self.data)
+        for profile in ('codex', 'wechat', 'claude', 'other'):
+            with self.subTest(profile=profile):
+                normal = self.view(profile, 'normal', 'menu')
+                self.assertIn('复制', normal.title)
+                view = self.view(profile, 'mouse', 'menu')
+                self.assertEqual(view.short, '鼠标右键')
+                self.assertTrue(view.fixed)
+                self.assertFalse(view.editable)
+                self.assertIn('长按只触发一次', view.detail)
+        self.assertEqual(before, self.data)
+
+    def test_unlearned_mouse_menu_is_marked_as_needing_identification(self):
+        for profile in ('codex', 'wechat', 'claude', 'other'):
+            view = self.view(profile, 'mouse', 'menu')
+            self.assertEqual(view.short, '待识别')
+            self.assertIn('先识别', view.detail)
+            self.assertTrue(view.fixed)
+
     def test_unlearned_home_cannot_be_presented_as_working(self):
         del self.data['extra_buttons']['home']
         self.assertEqual(self.view('codex','mouse','home').short,'待识别')

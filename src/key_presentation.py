@@ -52,6 +52,11 @@ def button_view(data, profile, mode, button):
         if button == 'confirm':
             return ButtonView('单击 / 右键', '左键点击 / 右键菜单',
                 '短按并松开：左键点击。长按约 0.6 秒：右键菜单，不会额外点击或发送消息。', False, True)
+        if button == 'menu':
+            learned = button in data['extra_buttons']
+            return ButtonView('鼠标右键' if learned else '待识别', '鼠标右键',
+                ('' if learned else '先识别菜单实体键并保存，右击才可使用。')
+                + '按一下在光标处右击，长按只触发一次；普通模式仍沿用原菜单键配置。', False, True)
         if button in ('volume_up', 'volume_down'):
             text = '向上' if button == 'volume_up' else '向下'
             return ButtonView(text + '滚动', text + '滚动',

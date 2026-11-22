@@ -38,7 +38,7 @@ class NavigationTests(unittest.TestCase):
         tmp = tempfile.TemporaryDirectory(); self.addCleanup(tmp.cleanup)
         self.path = Path(tmp.name) / 'keymap.json'
         self.data = C.defaults()
-        self.data['extra_buttons'] = {'home': E.KEY_HOME, 'tv': E.KEY_GRAVE}
+        self.data['extra_buttons'] = {'home': E.KEY_HOME, 'tv': E.KEY_GRAVE, 'menu': E.KEY_MENU}
         self.data['profiles']['codex']['home'] = 'Super'
         self.data['profiles']['wechat'].update(home='Super', tv='Alt+A')
         self.data['profiles']['other']['home'] = 'Super'
@@ -115,6 +115,72 @@ class NavigationTests(unittest.TestCase):
         self.assertTrue(all(e == (E.EV_REL, E.REL_WHEEL, 1) for e in self.mouse.events))
         before = list(self.mouse.events); self.advance(.5)
         self.assertEqual(before, self.mouse.events); self.assertEqual(self.keyboard.events, [])
+
+    def test_menu_right_clicks_once_on_press_in_every_application(self):
+        self.enter()
+        for context in ('codex', 'wechat', 'claude', 'other'):
+            with self.subTest(context=context):
+                self.context = context; self.advance(.1); self.mouse.events.clear()
+                self.assertTrue(self.raw(E.KEY_MENU, 1))
+                expected = [(E.EV_KEY, E.BTN_RIGHT, v) for v in (1, 0)]
+                self.assertEqual(self.mouse.events, expected)
+                for value in (1, 2, 2): self.assertTrue(self.raw(E.KEY_MENU, value))
+                self.advance(.7); self.raw(E.KEY_MENU, 0)
+                self.assertEqual(self.mouse.events, expected)
+                self.assertEqual(self.keyboard.events, [])
+
+    def test_menu_normal_shortcut_is_preserved_but_not_sent_in_mouse_mode(self):
+        self.data['profiles']['codex']['menu'] = 'Ctrl+C'
+        C.save(self.data, C.read_bytes(self.path), self.path)
+        self.raw(E.KEY_MENU, 1); self.raw(E.KEY_MENU, 0)
+        expected = [(E.EV_KEY, E.KEY_LEFTCTRL, 1), (E.EV_KEY, E.KEY_C, 1),
+                    (E.EV_KEY, E.KEY_C, 0), (E.EV_KEY, E.KEY_LEFTCTRL, 0)]
+        self.assertEqual(self.keyboard.events, expected)
+        self.keyboard.events.clear(); self.enter()
+        self.raw(E.KEY_MENU, 1); self.raw(E.KEY_MENU, 0)
+        self.assertEqual(self.keyboard.events, [])
+        self.raw(E.KEY_HOME, 1); self.advance(.61); self.raw(E.KEY_HOME, 0)
+        self.raw(E.KEY_MENU, 1); self.raw(E.KEY_MENU, 0)
+        self.assertEqual(self.keyboard.events, expected)
+        self.assertEqual(self.data['profiles']['codex']['menu'], 'Ctrl+C')
+
+    def test_menu_uses_learned_code_and_does_not_guess_unregistered_keys(self):
+        del self.data['extra_buttons']['menu']
+        C.save(self.data, C.read_bytes(self.path), self.path)
+        self.enter(); self.raw(E.KEY_MENU, 1); self.raw(E.KEY_MENU, 0)
+        self.assertEqual(self.mouse.events, [])
+        self.assertEqual(self.keyboard.events, [(E.EV_KEY, E.KEY_MENU, v) for v in (1, 0)])
+        self.data['extra_buttons']['menu'] = E.KEY_COMPOSE
+        C.save(self.data, C.read_bytes(self.path), self.path)
+        self.advance(.1); self.keyboard.events.clear(); self.enter()
+        self.raw(E.KEY_COMPOSE, 1); self.raw(E.KEY_COMPOSE, 0)
+        self.assertEqual(self.mouse.events, [(E.EV_KEY, E.BTN_RIGHT, v) for v in (1, 0)])
+        self.assertEqual(self.keyboard.events, [])
+
+    def test_menu_does_not_repeat_after_focus_change_or_missing_release(self):
+        self.enter(); self.raw(E.KEY_MENU, 1)
+        expected = list(self.mouse.events)
+        self.context = 'wechat'; self.advance(.1)
+        self.nav.reconcile([]); self.time += .17; self.nav.reconcile([])
+        self.raw(E.KEY_MENU, 2); self.raw(E.KEY_MENU, 0)
+        self.assertEqual(self.mouse.events, expected)
+        self.assertEqual(self.keyboard.events, [])
+        self.assertNotIn(E.KEY_MENU, self.nav.owned)
+        self.raw(E.KEY_MENU, 1); self.raw(E.KEY_MENU, 0)
+        self.assertEqual(self.mouse.events, expected * 2)
+
+    def test_menu_output_failure_releases_button_without_sending_keyboard_action(self):
+        self.enter()
+        write = self.mouse.write
+        def fail_press(kind, code, value):
+            if value == 1: raise OSError('disconnected')
+            write(kind, code, value)
+        with patch.object(self.mouse, 'write', side_effect=fail_press):
+            self.assertTrue(self.raw(E.KEY_MENU, 1))
+        self.raw(E.KEY_MENU, 2); self.raw(E.KEY_MENU, 0)
+        self.assertFalse(self.nav.active)
+        self.assertEqual(self.mouse.events, [(E.EV_KEY, E.BTN_RIGHT, 0)])
+        self.assertEqual(self.keyboard.events, [])
 
     def test_back_esc_and_voice_prompt_are_not_backspace_or_f5(self):
         self.enter(); self.raw(E.KEY_BACK, 1); self.raw(E.KEY_BACK, 0)
